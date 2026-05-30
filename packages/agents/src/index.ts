@@ -1,4 +1,4 @@
-export { orchestrate } from "./orchestrator.js";
-export { routeLane } from "./router.js";
-export type { OrchestratorOptions } from "./orchestrator.js";
-export type { Lane } from "./router.js";
+export { orchestrate } from "./orchestrator";
+export { routeLane } from "./router";
+export type { OrchestratorOptions } from "./orchestrator";
+export type { Lane } from "./router";

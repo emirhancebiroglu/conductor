@@ -29,7 +29,7 @@ async function loadDotEnv(): Promise<void> {
       if (eq === -1) continue;
       const key = trimmed.slice(0, eq).trim();
       const val = trimmed.slice(eq + 1).trim();
-      if (key && val && !process.env[key]) {
+      if (key && val) {
         process.env[key] = val;
       }
     }
@@ -48,6 +48,7 @@ async function main(): Promise<void> {
   const githubToken = requireEnv("GITHUB_TOKEN");
   const repoOwner = requireEnv("SMOKE_REPO_OWNER");
   const repoName = requireEnv("SMOKE_REPO_NAME");
+
 
   const timestamp = Date.now().toString();
   const branch = `feature/smoke-${timestamp}`;

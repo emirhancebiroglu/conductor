@@ -9,22 +9,22 @@
 ---
 
 ## Faz 0 — Foundations · DL 2026-06-07
-- [ ] **T-001** Hesaplar: GitHub App/PAT, Supabase, OpenCode Go key, Claude Pro login · Est 2 · Dep —
-- [ ] **T-002** Worker VM (Fly/Railway/VPS): Node 22, git, OpenCode CLI, Claude Code CLI, Playwright kur · Est 2 · Dep T-001
-- [ ] **T-003** Monorepo iskeleti (pnpm workspaces, apps/, packages/) · Est 1 · Dep —
-- [ ] **T-004** Supabase şema migrate (projects, jobs, runs, usage_log, approvals) · Est 1 · Dep T-001
-- [ ] **T-005** "Hello agent" scripti: clone → branch → README satırı → commit → push → PR (Octokit) · Est 2 · Dep T-002,T-004
-- [ ] **M0** ✅ Elle tetiklenen script gerçek PR açıyor · Dep T-005
+- [*] **T-001** Hesaplar: GitHub App/PAT, Supabase, OpenCode Go key, Claude Pro login · Est 2 · Dep —
+- [*] **T-002** Worker VM (Fly/Railway/VPS): Node 22, git, OpenCode CLI, Claude Code CLI, Playwright kur · Est 2 · Dep T-001
+- [*] **T-003** Monorepo iskeleti (pnpm workspaces, apps/, packages/) · Est 1 · Dep —
+- [*] **T-004** Supabase şema migrate (projects, jobs, runs, usage_log, approvals) · Est 1 · Dep T-001
+- [*] **T-005** "Hello agent" scripti: clone → branch → README satırı → commit → push → PR (Octokit) · Est 2 · Dep T-002,T-004
+- [*] **M0** ✅ Elle tetiklenen script gerçek PR açıyor · Dep T-005
 
 ## Faz 1 — Control plane MVP · DL 2026-06-21
-- [ ] **T-101** Next.js + Tailwind + shadcn iskelet, tek-kullanıcı auth (Supabase) · Est 3 · Dep T-003
-- [ ] **T-102** GitHub App/OAuth bağla → repo listesini çek · Est 4 · Dep T-001,T-101
-- [ ] **T-103** "Projeyi bağla/seç" ekranı → `projects` kaydı · Est 3 · Dep T-102,T-004
-- [ ] **T-104** "New feature" formu (başlık, açıklama, branch, lane) → `POST /api/jobs` · Est 4 · Dep T-103
-- [ ] **T-105** Job listesi + detay sayfası · Est 4 · Dep T-104
-- [ ] **T-106** Supabase Realtime → job durumu canlı güncelleme · Est 3 · Dep T-105
-- [ ] **T-107** API input validation (zod) + hata yönetimi · Est 2 · Dep T-104
-- [ ] **M1** ✅ Dashboard'dan feature → DB'de queued job, listede görünüyor · Dep T-106
+- [*] **T-101** Next.js + Tailwind + shadcn iskelet, tek-kullanıcı auth (Supabase) · Est 3 · Dep T-003
+- [*] **T-102** GitHub App/OAuth bağla → repo listesini çek · Est 4 · Dep T-001,T-101
+- [*] **T-103** "Projeyi bağla/seç" ekranı → `projects` kaydı · Est 3 · Dep T-102,T-004
+- [*] **T-104** "New feature" formu (başlık, açıklama, branch, lane) → `POST /api/jobs` · Est 4 · Dep T-103
+- [x] **T-105** Job listesi + detay sayfası · Est 4 · Dep T-104
+- [x] **T-106** Supabase Realtime → job durumu canlı güncelleme · Est 3 · Dep T-105
+- [x] **T-107** API input validation (zod) + hata yönetimi · Est 2 · Dep T-104
+- [x] **M1** ✅ Dashboard'dan feature → DB'de queued job, listede görünüyor · Dep T-106
 
 ## Faz 2 — Execution plane (happy path) · DL 2026-06-28
 - [ ] **T-201** Worker: job poll/subscribe döngüsü, `running`'e çek · Est 3 · Dep T-004

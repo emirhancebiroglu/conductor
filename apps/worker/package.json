@@ -12,9 +12,10 @@
     "smoke": "tsx src/smoke-test.ts"
   },
   "dependencies": {
+    "@conductor/agents": "workspace:*",
     "@conductor/core": "workspace:*",
     "@conductor/github": "workspace:*",
-    "@conductor/agents": "workspace:*"
+    "@supabase/supabase-js": "^2.106.2"
   },
   "devDependencies": {
     "@conductor/tsconfig": "workspace:*",

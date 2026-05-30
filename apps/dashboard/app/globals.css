@@ -1,59 +1,199 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
-  }
+    --background: 0 0% 4%;
+    --foreground: 45 15% 88%;
+    --card: 0 0% 7%;
+    --card-foreground: 45 15% 88%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 45 15% 88%;
+    --primary: 38 100% 54%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 45 10% 70%;
+    --muted: 0 0% 9%;
+    --muted-foreground: 45 5% 45%;
+    --accent: 38 100% 54%;
+    --accent-foreground: 0 0% 4%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 45 15% 88%;
+    --border: 0 0% 13%;
+    --input: 0 0% 10%;
+    --ring: 38 100% 54%;
+    --radius: 0rem;
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* Conductor custom tokens */
+    --amber: #f59e0b;
+    --amber-dim: #92400e;
+    --amber-glow: rgba(245, 158, 11, 0.08);
+    --grid-line: rgba(255, 255, 255, 0.04);
+    --surface: #0a0a0a;
+    --surface-raised: #111111;
+    --surface-overlay: #161616;
+    --text-primary: #e8e2d9;
+    --text-secondary: #7a7468;
+    --text-dim: #3d3a35;
+    --sidebar-w: 220px;
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--surface);
+    color: var(--text-primary);
+    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  /* Dot-grid background */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(
+      circle,
+      var(--grid-line) 1px,
+      transparent 1px
+    );
+    background-size: 24px 24px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #__next,
+  main {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: "Syne", sans-serif;
+  }
+  .font-mono {
+    font-family: "JetBrains Mono", monospace;
+  }
+
+  /* Amber glow effect */
+  .glow-amber {
+    box-shadow: 0 0 0 1px var(--amber), 0 0 20px var(--amber-glow);
+  }
+
+  /* Scan line animation */
+  @keyframes scan {
+    from {
+      transform: translateY(-100%);
+    }
+    to {
+      transform: translateY(100vh);
+    }
+  }
+
+  .scan-line {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--amber-glow),
+      transparent
+    );
+    animation: scan 8s linear infinite;
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* Status badge colors */
+  .status-queued {
+    color: var(--text-secondary);
+    border-color: var(--text-dim);
+  }
+  .status-running {
+    color: var(--amber);
+    border-color: var(--amber-dim);
+  }
+  .status-pr_opened {
+    color: #34d399;
+    border-color: #065f46;
+  }
+  .status-merged {
+    color: #818cf8;
+    border-color: #312e81;
+  }
+  .status-failed {
+    color: #f87171;
+    border-color: #7f1d1d;
+  }
+  .status-needs_human {
+    color: #fb923c;
+    border-color: #7c2d12;
+  }
+
+  /* Fade in stagger */
+  @keyframes fadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-up {
+    animation: fadeUp 0.4s ease forwards;
+  }
+
+  .delay-100 { animation-delay: 100ms; }
+  .delay-200 { animation-delay: 200ms; }
+  .delay-300 { animation-delay: 300ms; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
+}
+
+@layer components {
+  .new-feature-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 0;
+    background-color: var(--amber);
+    color: var(--surface);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    transition: background-color 0.15s;
+    text-decoration: none;
+  }
+  .new-feature-btn:hover {
+    background-color: #fbbf24;
   }
 }

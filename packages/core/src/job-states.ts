@@ -1,4 +1,4 @@
-import type { JobStatus } from "./types.js";
+import type { JobStatus } from "./types";
 
 export const JOB_STATUS = {
   QUEUED: "queued",
