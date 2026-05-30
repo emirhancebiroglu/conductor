@@ -1,3 +1,4 @@
+// smoke: 1780170351491
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
