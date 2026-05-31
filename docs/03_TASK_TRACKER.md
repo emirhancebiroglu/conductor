@@ -50,20 +50,41 @@
 - [*] **M3** ✅ Orta zorlukta feature → 8-agent ekip → security+review+test → PR · Dep T-309,T-310,T-311
 
 ## Faz 4 — Router + observability + kapılar · DL 2026-07-19
-- [ ] **T-401** Router: role+complexity → şerit/model seçimi (policy doc 08) · Est 4 · Dep T-308
-- [ ] **T-402** `usage_log` yaz: her çağrıda model+token+tahmini maliyet · Est 3 · Dep T-401
-- [ ] **T-403** Limit guardrail: eşik yaklaşınca premium kapat / ucuza düş / durdur · Est 3 · Dep T-402
-- [ ] **T-404** Dashboard: canlı run adımları + log viewer · Est 4 · Dep T-106
-- [ ] **T-405** Dashboard: maliyet sayacı + limit barı · Est 2 · Dep T-402
-- [ ] **T-406** Onay kapıları UI: `approvals` (migration/merge) onayla/reddet · Est 3 · Dep T-105
-- [ ] **M4** ✅ "Ne çalışıyor, ne kadar, neyi onaylamalıyım" tek bakışta · Dep T-405,T-406
+- [*] **T-401** Router: role+complexity → şerit/model seçimi (policy doc 08) · Est 4 · Dep T-308
+- [*] **T-402** `usage_log` yaz: her çağrıda model+token+tahmini maliyet · Est 3 · Dep T-401
+- [*] **T-403** Limit guardrail: eşik yaklaşınca premium kapat / ucuza düş / durdur · Est 3 · Dep T-402
+- [*] **T-404** Dashboard: canlı run adımları + log viewer · Est 4 · Dep T-106
+- [*] **T-405** Dashboard: maliyet sayacı + limit barı · Est 2 · Dep T-402
+- [*] **T-406** Onay kapıları UI: `approvals` (migration/merge) onayla/reddet · Est 3 · Dep T-105
+- [*] **M4** ✅ "Ne çalışıyor, ne kadar, neyi onaylamalıyım" tek bakışta · Dep T-405,T-406
 
 ## Faz 5 — Fikir→MVP hattı · DL 2026-07-26
-- [ ] **T-501** `idea` job tipi + form · Est 2 · Dep T-104
-- [ ] **T-502** Research agent'ları (pazar/rakip/pain; web+PH+Reddit MCP) · Est 5 · Dep T-501
-- [ ] **T-503** PRD + MVP kapsam + tech seçim çıktısı (insan onay kapısı) · Est 3 · Dep T-502
-- [ ] **T-504** Repo scaffold üret + ilk feature listesini `jobs`'a yaz · Est 4 · Dep T-503
-- [ ] **M5** ✅ Fikir cümlesi → araştırma + scaffold + sıraya alınmış feature'lar · Dep T-504
+
+- [ ] **T-501** 'idea' job tipi + DB (prd, prd_approved, research_output, 
+      scaffold_repo alanları + idea_exhausted status) · Est 2 · Dep M4
+- [ ] **T-502** Scout agent + skill (tema opsiyonel → kendi 3 alan seçer,
+      PH/Reddit/HN/Trends web araştırması, fikir üretimi, 5 boyut skoru,
+      top 5 listesi) · Est 5 · Dep T-501
+- [ ] **T-503** Executioner agent + skill (kill test, her fikre 3 ölüm 
+      senaryosu, 2-3 hayatta kalan + "neden öldü" raporu) · Est 3 · Dep T-502
+- [ ] **T-504** Advocate agent + skill (Claude premium, fikrin en iyi 
+      versiyonu, top %1 execution planı) · Est 3 · Dep T-503
+- [ ] **T-505** Adversary agent + skill (Go model cheap, yapısal itiraz 
+      zorunlu, kanıtsız itiraz geçersiz, sycophancy önleme) · Est 3 · Dep T-503
+- [ ] **T-506** Judge agent + skill (PASS/MODIFY/DEADLOCK state machine,
+      her iki argümanı değerlendirir, bağlayıcı karar) · Est 4 · Dep T-504,T-505
+- [ ] **T-507** Idea orchestrator: debate loop (max 3), idea_exhausted 
+      + neden özeti, DEADLOCK→Scout kısıtlarla, MODIFY→debate tekrar · Est 5 · Dep T-506
+- [ ] **T-508** 'idea' job tipi dashboard form (tema opsiyonel, hedef kitle, 
+      problem alanı) + navigasyon butonu · Est 2 · Dep T-501
+- [ ] **T-509** Product Manager agent + skill (PRD üretimi, waiting PRD 
+      onayı için dashboard review UI + onayla/düzenle/iptal) · Est 4 · Dep T-507
+- [ ] **T-510** Scaffolder agent + skill (repo scaffold, feature listesi 
+      jobs'a queue) + parent job decomposed · Est 4 · Dep T-509
+- [ ] **T-511** Idea job timeline UI (Scout/Exec/Advocate/Adversary/Judge 
+      adımları, paralel araştırma badge'i, PRD preview) · Est 3 · Dep T-508
+- [ ] **M5** ✅ Fikir/tema → araştırma → kill test → tartışma → Judge PASS 
+      → PRD onayı → scaffold → feature queue · Dep T-510,T-511
 
 ## Faz 6 — Hardening + dogfood · DL 2026-08-02
 - [ ] **T-601** Retry/timeout/kill-switch sağlamlaştır · Est 3 · Dep M4

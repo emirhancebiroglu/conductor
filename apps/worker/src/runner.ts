@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { accessSync } from "node:fs";
 import type { ZodType } from "zod";
 import { logUsage } from "./usage.js";
+import type { AgentConfig } from "./agentConfig.js";
 
 const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -216,7 +217,7 @@ async function logRun(
 // ---------------------------------------------------------------------------
 
 const JSON_SUFFIX =
-  "\n\nÖNEMLİ: Sadece geçerli JSON döndür. Markdown yok, açıklama yok. Başka hiçbir metin ekleme.";
+  "\n\nÖNEMLİ: Sadece geçerli JSON döndür. Markdown yok, açıklama yok. Başka hiçbir metin ekleme. String değerlerde ASLA \\ kullanma, Türkçe karakterleri doğrudan yaz.";
 
 function extractJson(raw: string): string {
   // Strip markdown code fences if agent wrapped JSON in ```json ... ```
@@ -226,6 +227,23 @@ function extractJson(raw: string): string {
   const start = raw.search(/[{[]/);
   if (start !== -1) return raw.slice(start).trim();
   return raw.trim();
+}
+
+function sanitizeJson(raw: string): string {
+  // Geçersiz kaçış karakterlerini temizle: \' → ', \` → `
+  raw = raw.replace(/\\(['`])/g, '$1');
+
+  // String içindeki kontrol karakterlerini düzelt
+  // eslint-disable-next-line no-control-regex
+  raw = raw.replace(/[\u0000-\u001f]/g, (c) => {
+    const map: Record<string, string> = {
+      '\b': '\\b', '\f': '\\f', '\n': '\\n',
+      '\r': '\\r', '\t': '\\t',
+    };
+    return map[c] || `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`;
+  });
+
+  return raw;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +261,7 @@ export type AgentRunOptions = {
   model?: string;
   supabase?: SupabaseAny;
   onLine?: (line: string, stream: "stdout" | "stderr") => void | Promise<void>;
+  agentConfig?: AgentConfig;
 };
 
 /**
@@ -252,14 +271,20 @@ export type AgentRunOptions = {
 export async function runAgentForJSON<T>(
   options: AgentRunOptions & { schema: ZodType<T> },
 ): Promise<T> {
-  const { repoDir, systemPrompt, userPrompt, jobId, agentName, lane, model, schema, supabase, onLine } =
+  const { repoDir, systemPrompt, userPrompt, jobId, agentName, lane, model, schema, supabase, onLine, agentConfig } =
     options;
 
-  const fullPrompt = `${systemPrompt}\n\n${userPrompt}${JSON_SUFFIX}`;
+  const resolvedSystemPrompt = agentConfig?.systemPrompt ?? systemPrompt;
+  const resolvedModel = agentConfig?.model ?? model;
+  const resolvedLane = (agentConfig?.laneOverride === "cheap" || agentConfig?.laneOverride === "premium")
+    ? agentConfig.laneOverride
+    : lane;
+
+  const fullPrompt = `${resolvedSystemPrompt}\n\n${userPrompt}${JSON_SUFFIX}`;
 
   let startedRunId: string | null = null;
   if (supabase) {
-    startedRunId = await logRun(supabase, jobId, agentName, lane, "started", { prompt: userPrompt }, 1, model);
+    startedRunId = await logRun(supabase, jobId, agentName, resolvedLane, "started", { prompt: userPrompt }, 1, resolvedModel);
   }
 
   let lastParseError = "";
@@ -271,29 +296,30 @@ export async function runAgentForJSON<T>(
         : `${fullPrompt}\n\nGeçersiz JSON üretildi, tekrar dene. Hata: ${lastParseError}`;
 
     if (attempt === 2 && supabase) {
-      await logRun(supabase, jobId, agentName, lane, "retry", { attempt, error: lastParseError }, attempt, model);
+      await logRun(supabase, jobId, agentName, resolvedLane, "retry", { attempt, error: lastParseError }, attempt, resolvedModel);
     }
 
-    const result = await spawnAgent(lane, prompt, repoDir, onLine, model);
+    const result = await spawnAgent(resolvedLane, prompt, repoDir, onLine, resolvedModel);
 
     if (!result.success) {
       if (supabase) {
-        await logRun(supabase, jobId, agentName, lane, "failed", { error: result.error }, attempt, model);
+        await logRun(supabase, jobId, agentName, resolvedLane, "failed", { error: result.error }, attempt, resolvedModel);
       }
       throw new Error(`[${agentName}] agent failed: ${result.error}`);
     }
 
     if (startedRunId) {
-      await logUsage(startedRunId, prompt, result.output, lane, model ?? modelLabel(lane));
+      await logUsage(startedRunId, prompt, result.output, resolvedLane, resolvedModel ?? modelLabel(resolvedLane));
     }
 
     const raw = extractJson(result.output);
+    const sanitized = sanitizeJson(raw);
 
     try {
-      const parsed = JSON.parse(raw) as unknown;
+      const parsed = JSON.parse(sanitized) as unknown;
       const validated = schema.parse(parsed);
       if (supabase) {
-        await logRun(supabase, jobId, agentName, lane, "ok", { output: validated as Record<string, unknown> }, attempt, model);
+        await logRun(supabase, jobId, agentName, resolvedLane, "ok", { output: validated as Record<string, unknown> }, attempt, resolvedModel);
       }
       return validated;
     } catch (err) {
@@ -303,7 +329,7 @@ export async function runAgentForJSON<T>(
   }
 
   if (supabase) {
-    await logRun(supabase, jobId, agentName, lane, "failed", { error: lastParseError }, 2, model);
+    await logRun(supabase, jobId, agentName, resolvedLane, "failed", { error: lastParseError }, 2, resolvedModel);
   }
   throw new Error(`[${agentName}] JSON parse failed after 2 attempts: ${lastParseError}`);
 }
@@ -313,30 +339,36 @@ export async function runAgentForJSON<T>(
  * Used for BE/FE implementation agents that produce code diffs, not JSON.
  */
 export async function runAgentFreeText(options: AgentRunOptions): Promise<string> {
-  const { repoDir, systemPrompt, userPrompt, jobId, agentName, lane, model, supabase, onLine } = options;
+  const { repoDir, systemPrompt, userPrompt, jobId, agentName, lane, model, supabase, onLine, agentConfig } = options;
 
-  const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+  const resolvedSystemPrompt = agentConfig?.systemPrompt ?? systemPrompt;
+  const resolvedModel = agentConfig?.model ?? model;
+  const resolvedLane = (agentConfig?.laneOverride === "cheap" || agentConfig?.laneOverride === "premium")
+    ? agentConfig.laneOverride
+    : lane;
+
+  const fullPrompt = `${resolvedSystemPrompt}\n\n${userPrompt}`;
 
   let startedRunId: string | null = null;
   if (supabase) {
-    startedRunId = await logRun(supabase, jobId, agentName, lane, "started", { prompt: userPrompt }, 1, model);
+    startedRunId = await logRun(supabase, jobId, agentName, resolvedLane, "started", { prompt: userPrompt }, 1, resolvedModel);
   }
 
-  const result = await spawnAgent(lane, fullPrompt, repoDir, onLine, model);
+  const result = await spawnAgent(resolvedLane, fullPrompt, repoDir, onLine, resolvedModel);
 
   if (!result.success) {
     if (supabase) {
-      await logRun(supabase, jobId, agentName, lane, "failed", { error: result.error }, 1, model);
+      await logRun(supabase, jobId, agentName, resolvedLane, "failed", { error: result.error }, 1, resolvedModel);
     }
     throw new Error(`[${agentName}] agent failed: ${result.error}`);
   }
 
   if (startedRunId) {
-    await logUsage(startedRunId, fullPrompt, result.output, lane, model ?? modelLabel(lane));
+    await logUsage(startedRunId, fullPrompt, result.output, resolvedLane, resolvedModel ?? modelLabel(resolvedLane));
   }
 
   if (supabase) {
-    await logRun(supabase, jobId, agentName, lane, "ok", { length: result.output.length }, 1, model);
+    await logRun(supabase, jobId, agentName, resolvedLane, "ok", { length: result.output.length }, 1, resolvedModel);
   }
 
   return result.output;

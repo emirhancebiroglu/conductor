@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getAgentsDirty, requestNavigation } from "@/lib/agents-dirty-state";
 
 type WorkerStatus = "online" | "paused_limit" | "paused_manual";
 
@@ -82,7 +83,83 @@ const NAV = [
       </svg>
     ),
   },
+  {
+    label: "Agents",
+    href: "/dashboard/agents",
+    icon: (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <circle cx="4" cy="4" r="2" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M1 10c0-1.8 1.5-3 3-3s3 1.2 3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="square" />
+        <circle cx="10" cy="4" r="2" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M7 10c0-1.8 1.5-3 3-3s3 1.2 3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="square" />
+      </svg>
+    ),
+  },
 ];
+
+function NavItem({
+  label,
+  href,
+  icon,
+  isActive,
+}: {
+  label: string;
+  href: string;
+  icon: React.ReactNode;
+  isActive: boolean;
+}) {
+  const [pending, setPending] = useState(false);
+
+  const handleClick = async (e: React.MouseEvent) => {
+    if (pending) return;
+    if (!getAgentsDirty()) return;
+
+    e.preventDefault();
+    setPending(true);
+    const allowed = await requestNavigation(href);
+    setPending(false);
+
+    if (allowed) {
+      window.location.href = href;
+    }
+  };
+
+  return (
+    <Link
+      href={href}
+      onClick={handleClick}
+      className="flex items-center gap-3 px-3 py-2.5 mb-0.5 text-xs transition-all group"
+      style={{
+        color: isActive ? "var(--amber)" : "var(--text-secondary)",
+        backgroundColor: isActive ? "var(--amber-glow)" : "transparent",
+        borderLeft: isActive
+          ? "2px solid var(--amber)"
+          : "2px solid transparent",
+        letterSpacing: "0.04em",
+        pointerEvents: pending ? "none" : "auto",
+        opacity: pending ? 0.5 : 1,
+      }}
+    >
+      <span
+        style={{
+          color: isActive ? "var(--amber)" : "var(--text-dim)",
+          transition: "color 0.15s",
+        }}
+      >
+        {icon}
+      </span>
+      {label}
+      {isActive && (
+        <span
+          className="ml-auto text-xs"
+          style={{ color: "var(--amber)", opacity: 0.6 }}
+        >
+          ▸
+        </span>
+      )}
+    </Link>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -161,37 +238,13 @@ export function Sidebar() {
         {NAV.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
-            <Link
+            <NavItem
               key={item.href}
+              label={item.label}
               href={item.href}
-              className="flex items-center gap-3 px-3 py-2.5 mb-0.5 text-xs transition-all group"
-              style={{
-                color: isActive ? "var(--amber)" : "var(--text-secondary)",
-                backgroundColor: isActive ? "var(--amber-glow)" : "transparent",
-                borderLeft: isActive
-                  ? "2px solid var(--amber)"
-                  : "2px solid transparent",
-                letterSpacing: "0.04em",
-              }}
-            >
-              <span
-                style={{
-                  color: isActive ? "var(--amber)" : "var(--text-dim)",
-                  transition: "color 0.15s",
-                }}
-              >
-                {item.icon}
-              </span>
-              {item.label}
-              {isActive && (
-                <span
-                  className="ml-auto text-xs"
-                  style={{ color: "var(--amber)", opacity: 0.6 }}
-                >
-                  ▸
-                </span>
-              )}
-            </Link>
+              icon={item.icon}
+              isActive={isActive}
+            />
           );
         })}
       </nav>

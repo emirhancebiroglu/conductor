@@ -2,8 +2,10 @@ import type { Plan, Spec, ReviewIssue, SecurityIssue } from "@conductor/core";
 import { readFile } from "node:fs/promises";
 import { runAgentFreeText, type AgentRunOptions } from "../runner.js";
 import { resolveRoute, type UsageState } from "../router.js";
+import type { AgentConfig } from "../agentConfig.js";
+import { getAgentConfig, loadAgentConfig } from "../agentConfig.js";
 
-const SYSTEM_PROMPT = `---
+const DEFAULT_SYSTEM_PROMPT = `---
 name: frontend-dev
 description: Bir feature'ın FE tarafını 2026 UI/UX ve erişilebilirlik standardında implemente eder. API kontratına göre çalışır.
 ---
@@ -34,10 +36,20 @@ export type FrontendOptions = Pick<AgentRunOptions, "repoDir" | "jobId" | "supab
   fixIssues?: Array<ReviewIssue | SecurityIssue>;
   fixFailures?: string[];
   usageState?: UsageState;
+  agentConfig?: AgentConfig;
 };
 
 export async function runFrontend(options: FrontendOptions): Promise<string> {
-  const { spec, plan, contextPath, fixIssues, fixFailures, repoDir, usageState, ...rest } = options;
+  const { spec, plan, contextPath, fixIssues, fixFailures, repoDir, usageState, agentConfig, ...rest } = options;
+
+  let config = agentConfig;
+  if (!config && rest.supabase) {
+    config = getAgentConfig("frontend-dev") ?? undefined;
+    if (!config) {
+      await loadAgentConfig(rest.supabase);
+      config = getAgentConfig("frontend-dev") ?? undefined;
+    }
+  }
 
   let contextContent = "";
   try {
@@ -88,10 +100,10 @@ ${contextContent}`;
   return runAgentFreeText({
     ...rest,
     repoDir,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     userPrompt,
     agentName: "frontend-dev",
     lane: route.lane,
-    model: route.model,
+    model: config?.model ?? route.model,
   });
 }

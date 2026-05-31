@@ -2,8 +2,10 @@ import { PlanSchema, type Plan, type Spec, type SecurityIssue } from "@conductor
 import { readFile } from "node:fs/promises";
 import { runAgentForJSON, type AgentRunOptions } from "../runner.js";
 import { resolveRoute, type UsageState } from "../router.js";
+import type { AgentConfig } from "../agentConfig.js";
+import { getAgentConfig, loadAgentConfig } from "../agentConfig.js";
 
-const SYSTEM_PROMPT = `---
+const DEFAULT_SYSTEM_PROMPT = `---
 name: tech-lead
 description: Spec + codebase context'ini alıp sistem tasarımı, task kırılımı ve API kontratı üretir. Feature çok karmaşıksa alt feature'lara böler. Security sorunları eskalasyon geldiğinde mimariyi yeniden tasarlar.
 ---
@@ -50,12 +52,22 @@ export type TechLeadOptions = Pick<AgentRunOptions, "repoDir" | "jobId" | "supab
   contextPath: string;
   securityIssues?: SecurityIssue[];
   usageState?: UsageState;
+  agentConfig?: AgentConfig;
 };
 
 export async function runTechLead(options: TechLeadOptions): Promise<Plan> {
-  const { spec, title, contextPath, securityIssues, repoDir, usageState, ...rest } = options;
+  const { spec, title, contextPath, securityIssues, repoDir, usageState, agentConfig, ...rest } = options;
   const isRedesign = securityIssues && securityIssues.length > 0;
   const route = resolveRoute("tech-lead", isRedesign ? "redesign" : "implement", usageState ?? { goMonthlyUsedUSD: 0, goWeeklyUsedUSD: 0, go5hUsedUSD: 0, softLimitHit: false, hardLimitHit: false });
+
+  let config = agentConfig;
+  if (!config && rest.supabase) {
+    config = getAgentConfig("tech-lead") ?? undefined;
+    if (!config) {
+      await loadAgentConfig(rest.supabase);
+      config = getAgentConfig("tech-lead") ?? undefined;
+    }
+  }
 
   let contextContent = "";
   try {
@@ -92,11 +104,11 @@ Yukarıdaki spec ve context'e göre teknik plan üret.`;
   return runAgentForJSON({
     ...rest,
     repoDir,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     userPrompt,
     agentName: "tech-lead",
     lane: route.lane,
-    model: route.model,
+    model: config?.model ?? route.model,
     schema: PlanSchema as any,
   }) as Promise<Plan>;
 }

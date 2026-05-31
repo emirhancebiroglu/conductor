@@ -1,5 +1,6 @@
 import { cloneAndBranch, cleanup } from "./git.js";
 import { runPipeline } from "./orchestrator.js";
+import { invalidateConfigCache } from "./agentConfig.js";
 
 // why: supabase any client passed through — typed at call site
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,6 +34,8 @@ async function updateJob(
 export async function processJob(supabase: SupabaseAny, job: Job): Promise<void> {
   const token = requireEnv("CONDUCTOR_GITHUB_TOKEN");
 
+  invalidateConfigCache();
+
   const { data: project } = await supabase
     .from("projects")
     .select("owner, repo, default_branch")
@@ -65,6 +68,7 @@ export async function processJob(supabase: SupabaseAny, job: Job): Promise<void>
     console.error(`[worker] job ${job.id} unhandled error: ${msg}`);
     await updateJob(supabase, job.id, { status: "failed", error: msg }).catch(() => {});
   } finally {
+    await updateJob(supabase, job.id, { current_agent: null, current_step_message: null }).catch(() => { });
     if (repoDir) cleanup(repoDir);
   }
 }

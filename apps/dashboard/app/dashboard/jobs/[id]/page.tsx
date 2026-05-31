@@ -25,6 +25,9 @@ const FIXTURE_WAITING_JOB: JobRow = {
   plan: null,
   answers: null,
   error: null,
+  current_agent: null,
+  current_step_message: null,
+  started_at: null,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };

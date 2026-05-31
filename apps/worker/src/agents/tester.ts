@@ -4,6 +4,8 @@ import { createConnection } from "node:net";
 import * as path from "node:path";
 import { runAgentForJSON, type AgentRunOptions } from "../runner.js";
 import { resolveRoute, type UsageState } from "../router.js";
+import type { AgentConfig } from "../agentConfig.js";
+import { getAgentConfig, loadAgentConfig } from "../agentConfig.js";
 
 // ---------------------------------------------------------------------------
 // waitForPort: poll TCP port until open or timeout
@@ -44,7 +46,7 @@ async function hasTestEnv(repoDir: string): Promise<boolean> {
 // System prompt
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `---
+const DEFAULT_SYSTEM_PROMPT = `---
 name: qa-engineer
 description: Unit testler + edge case + logging/exception kontrolü yazar ve çalıştırır; ortam varsa E2E da çalıştırır.
 ---
@@ -99,14 +101,24 @@ export type TesterOptions = Pick<AgentRunOptions, "repoDir" | "jobId" | "supabas
   failures?: string[];
   iteration: number;
   usageState?: UsageState;
+  agentConfig?: AgentConfig;
 };
 
 export async function runTester(options: TesterOptions): Promise<TestResult> {
-  const { commitMessage, failures, repoDir, iteration, usageState, ...rest } = options;
+  const { commitMessage, failures, repoDir, iteration, usageState, agentConfig, ...rest } = options;
 
   const isDebugMode = failures && failures.length > 0;
   const mode = isDebugMode ? "debug" : "analyze";
   const route = resolveRoute("qa-engineer", mode, usageState ?? { goMonthlyUsedUSD: 0, goWeeklyUsedUSD: 0, go5hUsedUSD: 0, softLimitHit: false, hardLimitHit: false });
+
+  let config = agentConfig;
+  if (!config && rest.supabase) {
+    config = getAgentConfig("qa-engineer") ?? undefined;
+    if (!config) {
+      await loadAgentConfig(rest.supabase);
+      config = getAgentConfig("qa-engineer") ?? undefined;
+    }
+  }
 
   const e2eAvailable = await hasTestEnv(repoDir);
   const e2eSection = e2eAvailable
@@ -125,11 +137,11 @@ export async function runTester(options: TesterOptions): Promise<TestResult> {
   return runAgentForJSON({
     ...rest,
     repoDir,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     userPrompt,
     agentName: "qa-engineer",
     lane: route.lane,
-    model: route.model,
+    model: config?.model ?? route.model,
     schema: TestResultSchema,
   });
 }

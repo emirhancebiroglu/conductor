@@ -4,6 +4,8 @@ import type {
   RunRow,
   UsageLogRow,
   ApprovalRow,
+  AgentConfigRow,
+  ProviderModelRow,
 } from "@conductor/core";
 
 export type Database = {
@@ -33,6 +35,16 @@ export type Database = {
         Row: ApprovalRow;
         Insert: Omit<ApprovalRow, "id">;
         Update: Partial<Omit<ApprovalRow, "id">>;
+      };
+      agent_config: {
+        Row: AgentConfigRow;
+        Insert: Omit<AgentConfigRow, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<AgentConfigRow, "id">>;
+      };
+      provider_models: {
+        Row: ProviderModelRow;
+        Insert: Omit<ProviderModelRow, "id" | "created_at">;
+        Update: Partial<Omit<ProviderModelRow, "id">>;
       };
     };
     Views: Record<string, never>;

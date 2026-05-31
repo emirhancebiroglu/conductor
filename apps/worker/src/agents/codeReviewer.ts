@@ -2,8 +2,10 @@ import { ReviewSchema, type Review } from "@conductor/core";
 import { runAgentForJSON, type AgentRunOptions } from "../runner.js";
 import { resolveRoute, type UsageState } from "../router.js";
 import { getGitDiff } from "./gitDiff.js";
+import type { AgentConfig } from "../agentConfig.js";
+import { getAgentConfig, loadAgentConfig } from "../agentConfig.js";
 
-const SYSTEM_PROMPT = `---
+const DEFAULT_SYSTEM_PROMPT = `---
 name: code-reviewer
 description: Yazılan kodu inceler, sorunları bulur ve düzeltme talebiyle yazan agent'a geri gönderir; temiz olana kadar döngüye devam eder (max 3 tur).
 ---
@@ -36,22 +38,32 @@ Stil tartışmasına girme; formatter/linter ne diyorsa o.
 export type CodeReviewerOptions = Pick<AgentRunOptions, "repoDir" | "jobId" | "supabase" | "onLine"> & {
   iteration: number;
   usageState?: UsageState;
+  agentConfig?: AgentConfig;
 };
 
 export async function runCodeReviewer(options: CodeReviewerOptions): Promise<Review> {
-  const { repoDir, iteration, usageState, ...rest } = options;
+  const { repoDir, iteration, usageState, agentConfig, ...rest } = options;
   const route = resolveRoute("code-reviewer", "review", usageState ?? { goMonthlyUsedUSD: 0, goWeeklyUsedUSD: 0, go5hUsedUSD: 0, softLimitHit: false, hardLimitHit: false });
+
+  let config = agentConfig;
+  if (!config && rest.supabase) {
+    config = getAgentConfig("code-reviewer") ?? undefined;
+    if (!config) {
+      await loadAgentConfig(rest.supabase);
+      config = getAgentConfig("code-reviewer") ?? undefined;
+    }
+  }
 
   const diff = await getGitDiff(repoDir);
 
   return runAgentForJSON({
     ...rest,
     repoDir,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     userPrompt: `Aşağıdaki diff'i kod kalitesi açısından incele (tur ${iteration}/3):\n\n\`\`\`diff\n${diff || "(diff boş — staged değişiklikler yok)"}\n\`\`\``,
     agentName: "code-reviewer",
     lane: route.lane,
-    model: route.model,
+    model: config?.model ?? route.model,
     schema: ReviewSchema,
   }) as Promise<Review>;
 }
