@@ -3,8 +3,10 @@ import * as path from "node:path";
 import type { Spec } from "@conductor/core";
 import { runAgentFreeText, type AgentRunOptions } from "../runner.js";
 import { resolveRoute, type UsageState } from "../router.js";
+import type { AgentConfig } from "../agentConfig.js";
+import { getAgentConfig, loadAgentConfig } from "../agentConfig.js";
 
-const SYSTEM_PROMPT = `---
+const DEFAULT_SYSTEM_PROMPT = `---
 name: codebase-analyst
 description: Bir feature implement edilmeden önce repoyu derinlemesine analiz eder ve tüm diğer agentların okuyacağı context.md dokümanını üretir.
 ---
@@ -39,12 +41,22 @@ export type CodebaseAnalystOptions = Pick<AgentRunOptions, "repoDir" | "jobId" |
   spec: Spec;
   title: string;
   usageState?: UsageState;
+  agentConfig?: AgentConfig;
 };
 
 /** Returns the path to the written context.md file. */
 export async function runCodebaseAnalyst(options: CodebaseAnalystOptions): Promise<string> {
-  const { spec, title, repoDir, usageState, ...rest } = options;
+  const { spec, title, repoDir, usageState, agentConfig, ...rest } = options;
   const route = resolveRoute("codebase-analyst", "analyze", usageState ?? { goMonthlyUsedUSD: 0, goWeeklyUsedUSD: 0, go5hUsedUSD: 0, softLimitHit: false, hardLimitHit: false });
+
+  let config = agentConfig;
+  if (!config && rest.supabase) {
+    config = getAgentConfig("codebase-analyst") ?? undefined;
+    if (!config) {
+      await loadAgentConfig(rest.supabase);
+      config = getAgentConfig("codebase-analyst") ?? undefined;
+    }
+  }
 
   const userPrompt = `FEATURE BAŞLIĞI: ${title}
 
@@ -58,11 +70,11 @@ Repo kökünde context.md dosyasını oluştur. Yalnızca o dosyayı yaz, başka
   const output = await runAgentFreeText({
     ...rest,
     repoDir,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     userPrompt,
     agentName: "codebase-analyst",
     lane: route.lane,
-    model: route.model,
+    model: config?.model ?? route.model,
   });
 
   // Agent writes context.md itself; if it only printed to stdout, persist it.

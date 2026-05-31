@@ -1,4 +1,5 @@
 import type { Lane } from "./runner.js";
+import type { AgentConfig } from "./agentConfig.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,24 +45,24 @@ const CHEAP_MODEL = process.env["OPENCODE_CHEAP_MODEL"] ?? "opencode-go/deepseek
 type PolicyKey = `${string}/${string}`;
 
 const BASE_POLICY: Record<PolicyKey, Lane> = {
-  "product-owner/*":        "premium",
+  "product-owner/*":        "cheap",
   "codebase-analyst/*":     "cheap",
-  "tech-lead/implement":    "premium",
-  "tech-lead/redesign":     "premium",
+  "tech-lead/implement":    "cheap",
+  "tech-lead/redesign":     "cheap",
   "backend-dev/implement":  "cheap",
   "backend-dev/fix":        "cheap",
-  "backend-dev/security-fix": "premium",
+  "backend-dev/security-fix": "cheap",
   "backend-dev/review-fix": "cheap",
   "backend-dev/test-fix":   "cheap",
   "frontend-dev/implement": "cheap",
   "frontend-dev/fix":       "cheap",
-  "frontend-dev/security-fix": "premium",
+  "frontend-dev/security-fix": "cheap",
   "frontend-dev/review-fix": "cheap",
   "frontend-dev/test-fix":  "cheap",
-  "security-reviewer/*":    "premium",
-  "code-reviewer/*":        "premium",
+  "security-reviewer/*":    "cheap",
+  "code-reviewer/*":        "cheap",
   "qa-engineer/analyze":    "cheap",
-  "qa-engineer/debug":      "premium",
+  "qa-engineer/debug":      "cheap",
 };
 
 function baseLane(agentName: string, mode: AgentMode): Lane {
@@ -81,6 +82,7 @@ export function resolveRoute(
   agentName: string,
   mode: AgentMode,
   usageState: UsageState,
+  agentConfig?: AgentConfig,
 ): RouteDecision {
   // Hard limit: force everything cheap
   if (usageState.hardLimitHit) {
@@ -91,7 +93,8 @@ export function resolveRoute(
     };
   }
 
-  const lane = baseLane(agentName, mode);
+  const isOverride = agentConfig?.laneOverride === "cheap" || agentConfig?.laneOverride === "premium";
+  const lane = isOverride ? agentConfig!.laneOverride! : baseLane(agentName, mode);
 
   // Soft limit: downgrade premium → cheap
   if (usageState.softLimitHit && lane === "premium") {
@@ -105,6 +108,6 @@ export function resolveRoute(
   return {
     lane,
     model: lane === "premium" ? PREMIUM_MODEL : CHEAP_MODEL,
-    reason: `policy: ${agentName}/${mode}`,
+    reason: isOverride ? `override: ${agentConfig!.laneOverride}` : `policy: ${agentName}/${mode}`,
   };
 }

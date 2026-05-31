@@ -9,7 +9,9 @@
     "start": "node dist/index.js",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "smoke": "tsx src/smoke-test.ts"
+    "smoke": "tsx src/smoke-test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@conductor/agents": "workspace:*",
@@ -20,12 +22,12 @@
   },
   "devDependencies": {
     "@conductor/tsconfig": "workspace:*",
-    "@eslint/js": "^9.18.0",
     "@types/node": "^22.10.5",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^2.1.8"
   }
 }

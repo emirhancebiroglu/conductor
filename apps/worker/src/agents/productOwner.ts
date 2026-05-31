@@ -1,8 +1,10 @@
 import { SpecSchema, type Spec } from "@conductor/core";
 import { runAgentForJSON, type AgentRunOptions } from "../runner.js";
 import { resolveRoute, type UsageState } from "../router.js";
+import type { AgentConfig } from "../agentConfig.js";
+import { getAgentConfig, loadAgentConfig } from "../agentConfig.js";
 
-const SYSTEM_PROMPT = `---
+const DEFAULT_SYSTEM_PROMPT = `---
 name: product-owner
 description: Kısa bir feature açıklamasını, web araştırması eşliğinde detaylı bir spec'e (kabul kriterleri dahil) çevirir. Conductor feature pipeline'ının ilk adımı. Kullanıcı bir özellik tarif ettiğinde, "şunu ekle", "bir feature istiyorum" dediğinde mutlaka tetikle. Belirsizlik varsa varsayım yapma, open_questions'a yaz.
 ---
@@ -39,11 +41,21 @@ export type ProductOwnerOptions = Pick<AgentRunOptions, "repoDir" | "jobId" | "s
   title: string;
   usageState?: UsageState;
   answers?: Record<string, string>;
+  agentConfig?: AgentConfig;
 };
 
 export async function runProductOwner(options: ProductOwnerOptions): Promise<Spec> {
-  const { description, title, usageState, answers, ...rest } = options;
+  const { description, title, usageState, answers, agentConfig, ...rest } = options;
   const route = resolveRoute("product-owner", "implement", usageState ?? { goMonthlyUsedUSD: 0, goWeeklyUsedUSD: 0, go5hUsedUSD: 0, softLimitHit: false, hardLimitHit: false });
+
+  let config = agentConfig;
+  if (!config && rest.supabase) {
+    config = getAgentConfig("product-owner") ?? undefined;
+    if (!config) {
+      await loadAgentConfig(rest.supabase);
+      config = getAgentConfig("product-owner") ?? undefined;
+    }
+  }
 
   let userPrompt = `FEATURE BAŞLIĞI: ${title}\n\nKISA AÇIKLAMA:\n${description}`;
 
@@ -56,11 +68,11 @@ export async function runProductOwner(options: ProductOwnerOptions): Promise<Spe
 
   return runAgentForJSON({
     ...rest,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     userPrompt,
     agentName: "product-owner",
     lane: route.lane,
-    model: route.model,
+    model: config?.model ?? route.model,
     schema: SpecSchema,
   });
 }

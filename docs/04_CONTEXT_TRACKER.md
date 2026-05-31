@@ -3,9 +3,9 @@
 > **Bu dosya canlıdır.** Agent'lar ve sen, "nerede kaldık" sorusunun cevabını buradan okur — sohbet geçmişine güvenme. Her oturum başı oku, her oturum sonu güncelle. Eskiyen satırı sil.
 
 ## Şu an
-- Faz: 4 — Cost router + observability + insan kapıları
-- Aktif görev: T-401
-- Son milestone: M3 ✅ (2026-06-XX)
+- Faz 5 — Fikir→MVP hattı · DL 2026-07-26
+- Aktif görev: T-501
+- Son milestone: M4 ✅
 
 ## 📌 Bu hafta (Pazartesi'de doldur)
 - [ ] …

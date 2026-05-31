@@ -27,6 +27,7 @@ export const JobStatusSchema = z.enum([
 ]);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 
+// Kept for pipeline / run tracking (runs table still uses these 8 names)
 export const AgentNameSchema = z.enum([
   "product-owner",
   "codebase-analyst",
@@ -38,6 +39,14 @@ export const AgentNameSchema = z.enum([
   "qa-engineer",
 ]);
 export type AgentName = z.infer<typeof AgentNameSchema>;
+
+// Open-ended slug for agent CRUD — allows custom agents beyond the original 8
+export const AgentSlugSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[a-z0-9-]+$/, "Must be lowercase alphanumeric with hyphens only");
+export type AgentSlug = z.infer<typeof AgentSlugSchema>;
 
 export const RunStatusSchema = z.enum(["started", "ok", "retry", "failed"]);
 export type RunStatus = z.infer<typeof RunStatusSchema>;
@@ -232,7 +241,7 @@ export const ProjectSchema = z.object({
   owner: z.string(),
   repo: z.string(),
   defaultBranch: z.string(),
-  createdAt: z.string().datetime(),
+  createdAt: z.string().datetime({ offset: true }),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
@@ -264,8 +273,11 @@ export const JobSchema = z.object({
   spec: SpecSchema.nullable(),
   plan: PlanSchema.nullable(),
   error: z.string().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  currentAgent: z.string().nullable(),
+  currentStepMessage: z.string().nullable(),
+  startedAt: z.string().datetime({ offset: true }).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
 });
 export type Job = z.infer<typeof JobSchema>;
 
@@ -285,6 +297,9 @@ export const JobRowSchema = z.object({
   plan: z.unknown().nullable(),
   answers: z.record(z.string()).nullable(),
   error: z.string().nullable(),
+  current_agent: z.string().nullable(),
+  current_step_message: z.string().nullable(),
+  started_at: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -306,7 +321,7 @@ export type CreateJob = z.infer<typeof CreateJobSchema>;
 export const RunSchema = z.object({
   id: z.string().uuid(),
   jobId: z.string().uuid(),
-  agent: AgentNameSchema,
+  agent: AgentSlugSchema,  // widened from AgentNameSchema — supports custom agents
   lane: LaneSchema.nullable(),
   model: z.string().nullable(),
   status: RunStatusSchema,
@@ -314,7 +329,7 @@ export const RunSchema = z.object({
   output: z.record(z.unknown()).nullable(),
   log: z.string().nullable(),
   iteration: z.number().int().positive(),
-  createdAt: z.string().datetime(),
+  createdAt: z.string().datetime({ offset: true }),
 });
 export type Run = z.infer<typeof RunSchema>;
 
@@ -322,7 +337,7 @@ export type Run = z.infer<typeof RunSchema>;
 export const RunRowSchema = z.object({
   id: z.string().uuid(),
   job_id: z.string().uuid(),
-  agent: AgentNameSchema,
+  agent: AgentSlugSchema,  // widened from AgentNameSchema — supports custom agents
   lane: LaneSchema.nullable(),
   model: z.string().nullable(),
   status: RunStatusSchema,
@@ -346,7 +361,7 @@ export const UsageLogSchema = z.object({
   inputTokens: z.number().int().nullable(),
   outputTokens: z.number().int().nullable(),
   estCostUsd: z.number().nullable(),
-  createdAt: z.string().datetime(),
+  createdAt: z.string().datetime({ offset: true }),
 });
 export type UsageLog = z.infer<typeof UsageLogSchema>;
 
@@ -373,7 +388,7 @@ export const ApprovalSchema = z.object({
   kind: ApprovalKindSchema,
   payload: z.record(z.unknown()).nullable(),
   status: ApprovalStatusSchema,
-  decidedAt: z.string().datetime().nullable(),
+  decidedAt: z.string().datetime({ offset: true }).nullable(),
 });
 export type Approval = z.infer<typeof ApprovalSchema>;
 
@@ -387,3 +402,111 @@ export const ApprovalRowSchema = z.object({
   decided_at: z.string().nullable(),
 });
 export type ApprovalRow = z.infer<typeof ApprovalRowSchema>;
+
+// ---------------------------------------------------------------------------
+// Table: agent_categories
+// ---------------------------------------------------------------------------
+
+export const AgentCategorySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  color: z.string(),
+  description: z.string().nullable(),
+  order: z.number().int(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type AgentCategory = z.infer<typeof AgentCategorySchema>;
+
+/** Raw DB row (snake_case) */
+export const AgentCategoryRowSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  slug: z.string(),
+  color: z.string(),
+  description: z.string().nullable(),
+  order: z.number().int(),
+  created_at: z.string(),
+});
+export type AgentCategoryRow = z.infer<typeof AgentCategoryRowSchema>;
+
+// ---------------------------------------------------------------------------
+// Table: agent_config
+// ---------------------------------------------------------------------------
+
+export const AgentConfigSchema = z.object({
+  id: z.string().uuid(),
+  agentName: AgentSlugSchema,       // was AgentNameSchema — now open-ended
+  displayName: z.string(),
+  role: z.string(),
+  provider: z.string(),
+  model: z.string(),
+  systemPrompt: z.string(),
+  skillContent: z.string().nullable(), // actual markdown content (replaces skillPath)
+  categoryId: z.string().uuid().nullable(),
+  enabled: z.boolean(),
+  laneOverride: LaneSchema.nullable(),
+  order: z.number().int(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+
+/** Raw DB row (snake_case) */
+export const AgentConfigRowSchema = z.object({
+  id: z.string().uuid(),
+  agent_name: AgentSlugSchema,
+  display_name: z.string(),
+  role: z.string(),
+  provider: z.string(),
+  model: z.string(),
+  system_prompt: z.string(),
+  skill_content: z.string().nullable(),
+  category_id: z.string().uuid().nullable(),
+  enabled: z.boolean(),
+  lane_override: LaneSchema.nullable(),
+  order: z.number().int(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type AgentConfigRow = z.infer<typeof AgentConfigRowSchema>;
+
+// ---------------------------------------------------------------------------
+// Table: provider_models
+// ---------------------------------------------------------------------------
+
+export const ProviderModelSchema = z.object({
+  id: z.string().uuid(),
+  provider: z.string(),
+  modelId: z.string(),
+  displayName: z.string(),
+  capabilities: z.record(z.unknown()),
+  available: z.boolean(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type ProviderModel = z.infer<typeof ProviderModelSchema>;
+
+/** Raw DB row (snake_case) */
+export const ProviderModelRowSchema = z.object({
+  id: z.string().uuid(),
+  provider: z.string(),
+  model_id: z.string(),
+  display_name: z.string(),
+  capabilities: z.unknown(),
+  available: z.boolean(),
+  created_at: z.string(),
+});
+export type ProviderModelRow = z.infer<typeof ProviderModelRowSchema>;
+
+// ---------------------------------------------------------------------------
+// API Helper Schemas
+// ---------------------------------------------------------------------------
+
+export const RunningJobSchema = z.object({
+  jobId: z.string().uuid(),
+  jobTitle: z.string(),
+  agentName: z.string(),
+  startedAt: z.string().datetime({ offset: true }),
+  stepMessage: z.string().nullable(),
+});
+export type RunningJob = z.infer<typeof RunningJobSchema>;

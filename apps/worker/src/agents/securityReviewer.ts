@@ -2,8 +2,10 @@ import { SecurityReviewSchema, type SecurityReview } from "@conductor/core";
 import { runAgentForJSON, type AgentRunOptions } from "../runner.js";
 import { resolveRoute, type UsageState } from "../router.js";
 import { getGitDiff } from "./gitDiff.js";
+import type { AgentConfig } from "../agentConfig.js";
+import { getAgentConfig, loadAgentConfig } from "../agentConfig.js";
 
-const SYSTEM_PROMPT = `---
+const DEFAULT_SYSTEM_PROMPT = `---
 name: security-reviewer
 description: BE+FE implementasyonunun güvenlik açıklarını OWASP standartlarında inceler.
 ---
@@ -61,22 +63,32 @@ Kalite sorunlarını (isimlendirme, refactor) buraya yazma — sadece güvenlik.
 export type SecurityReviewerOptions = Pick<AgentRunOptions, "repoDir" | "jobId" | "supabase" | "onLine"> & {
   iteration: number;
   usageState?: UsageState;
+  agentConfig?: AgentConfig;
 };
 
 export async function runSecurityReviewer(options: SecurityReviewerOptions): Promise<SecurityReview> {
-  const { repoDir, iteration, usageState, ...rest } = options;
+  const { repoDir, iteration, usageState, agentConfig, ...rest } = options;
   const route = resolveRoute("security-reviewer", "review", usageState ?? { goMonthlyUsedUSD: 0, goWeeklyUsedUSD: 0, go5hUsedUSD: 0, softLimitHit: false, hardLimitHit: false });
+
+  let config = agentConfig;
+  if (!config && rest.supabase) {
+    config = getAgentConfig("security-reviewer") ?? undefined;
+    if (!config) {
+      await loadAgentConfig(rest.supabase);
+      config = getAgentConfig("security-reviewer") ?? undefined;
+    }
+  }
 
   const diff = await getGitDiff(repoDir);
 
   return runAgentForJSON({
     ...rest,
     repoDir,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     userPrompt: `Aşağıdaki diff'i güvenlik açısından incele (tur ${iteration}/2):\n\n\`\`\`diff\n${diff || "(diff boş — staged değişiklikler yok)"}\n\`\`\``,
     agentName: "security-reviewer",
     lane: route.lane,
-    model: route.model,
+    model: config?.model ?? route.model,
     schema: SecurityReviewSchema,
   }) as Promise<SecurityReview>;
 }
