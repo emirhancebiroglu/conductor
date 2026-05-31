@@ -2,6 +2,37 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+
+type WorkerStatus = "online" | "paused_limit" | "paused_manual";
+
+function useWorkerStatus(): WorkerStatus {
+  const [status, setStatus] = useState<WorkerStatus>("online");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetch_() {
+      try {
+        const res = await fetch("/api/worker-status");
+        if (!res.ok) return;
+        const json = (await res.json()) as { status: WorkerStatus };
+        if (!cancelled) setStatus(json.status);
+      } catch {
+        // non-fatal
+      }
+    }
+
+    void fetch_();
+    const interval = setInterval(() => void fetch_(), 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  return status;
+}
 
 const NAV = [
   {
@@ -43,6 +74,8 @@ const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const workerStatus = useWorkerStatus();
+  const isPaused = workerStatus !== "online";
 
   return (
     <aside
@@ -151,7 +184,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
+      {/* Footer — worker status */}
       <div
         className="px-5 py-4"
         style={{ borderTop: "1px solid var(--border)" }}
@@ -159,10 +192,10 @@ export function Sidebar() {
         <div className="flex items-center gap-2">
           <div
             className="w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: "#34d399" }}
+            style={{ backgroundColor: isPaused ? "#f59e0b" : "#34d399" }}
           />
           <span className="text-xs" style={{ color: "var(--text-dim)" }}>
-            system online
+            {isPaused ? "duraklatıldı" : "system online"}
           </span>
         </div>
       </div>

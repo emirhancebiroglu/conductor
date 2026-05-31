@@ -35,6 +35,13 @@ const STATUS_META: Record<JobStatus, StatusMeta> = {
     dot: "var(--amber)",
     pulse: true,
   },
+  decomposed: {
+    label: "DECOMPOSED",
+    color: "#f59e0b",
+    bg: "rgba(245,158,11,0.08)",
+    border: "rgba(245,158,11,0.25)",
+    dot: "#f59e0b",
+  },
   review_loop: {
     label: "REVIEW",
     color: "#60a5fa",

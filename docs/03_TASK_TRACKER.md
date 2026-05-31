@@ -27,24 +27,27 @@
 - [x] **M1** ✅ Dashboard'dan feature → DB'de queued job, listede görünüyor · Dep T-106
 
 ## Faz 2 — Execution plane (happy path) · DL 2026-06-28
-- [ ] **T-201** Worker: job poll/subscribe döngüsü, `running`'e çek · Est 3 · Dep T-004
-- [ ] **T-202** Git worktree yönetimi: izole klon + `feature/<slug>` aç · Est 3 · Dep T-201
-- [ ] **T-203** Tek agent runner (Claude Code `claude -p` adaptörü) · Est 4 · Dep T-002,T-202
-- [ ] **T-204** Commit + push + PR aç → `pr_url` yaz · Est 3 · Dep T-203
-- [ ] **T-205** Hata yakalama + `failed` + log → `runs` · Est 2 · Dep T-203
-- [ ] **T-206** Worktree temizliği (başarı/başarısızlık sonrası) · Est 1 · Dep T-202
-- [ ] **M2** ✅ Dashboard'dan basit feature → dakikalar içinde gerçek PR linki ekranda · Dep T-204
+- [*] **T-201** Worker: job poll/subscribe döngüsü, `running`'e çek · Est 3 · Dep T-004
+- [*] **T-202** Git worktree yönetimi: izole klon + `feature/<slug>` aç · Est 3 · Dep T-201
+- [*] **T-203** Tek agent runner (Claude Code `claude -p` adaptörü) · Est 4 · Dep T-002,T-202
+- [*] **T-204** Commit + push + PR aç → `pr_url` yaz · Est 3 · Dep T-203
+- [*] **T-205** Hata yakalama + `failed` + log → `runs` · Est 2 · Dep T-203
+- [*] **T-206** Worktree temizliği (başarı/başarısızlık sonrası) · Est 1 · Dep T-202
+- [*] **M2** ✅ Dashboard'dan basit feature → dakikalar içinde gerçek PR linki ekranda · Dep T-204
 
 ## Faz 3 — Agent ekibi · DL 2026-07-12
-- [ ] **T-301** Orchestrator iskelet: sıralı + koşullu adımlar, state machine · Est 4 · Dep T-203
-- [ ] **T-302** Handoff sözleşmesi: her agent yapılandırılmış çıktı (zod şemalı) · Est 3 · Dep T-301
-- [ ] **T-303** product-owner agent + skill bağla (web research) · Est 3 · Dep T-302
-- [ ] **T-304** architect agent + skill (plan, API kontrat, branch) · Est 3 · Dep T-303
-- [ ] **T-305** frontend + backend agent (paylaşılan api-contract) · Est 5 · Dep T-304
-- [ ] **T-306** code-reviewer döngüsü (temiz olana kadar, max N tur → insana yükselt) · Est 4 · Dep T-305
-- [ ] **T-307** tester döngüsü: unit + edge + Playwright E2E (pass olana kadar) · Est 5 · Dep T-306
-- [ ] **T-308** OpenCode (ucuz şerit) runner adaptörü + agent-team plugin · Est 4 · Dep T-301
-- [ ] **M3** ✅ Orta zorlukta feature → ekip → test → PR · Dep T-307,T-308
+- [*] **T-301** Orchestrator iskelet: sıralı + koşullu adımlar, state machine, sub-job decomposition · Est 4 · Dep T-203
+- [*] **T-302** Handoff şemaları: Spec, Plan (complexity+sub_features), SecurityReview, Review, TestResult (zod) · Est 3 · Dep T-301
+- [ ] **T-303** product-owner agent + skill (web research, open_questions → needs_human) · Est 2 · Dep T-302
+- [*] **T-304** codebase-analyst agent + skill (context.md üretimi, cheap lane) · Est 3 · Dep T-302
+- [*] **T-305** tech-lead agent + skill (plan, API kontrat, complexity, sub-job, redesign modu) · Est 4 · Dep T-303,T-304
+- [*] **T-306** backend-dev + frontend-dev agent (implement + fix + security-fix + review-fix + test-fix modları) · Est 5 · Dep T-305
+- [*] **T-307** security-reviewer döngüsü (max 2 tur → Tech Lead redesign → max 2 tur → needs_human) · Est 4 · Dep T-306
+- [*] **T-308** code-reviewer döngüsü (max 3 tur → needs_human) · Est 3 · Dep T-307
+- [*] **T-309** qa-engineer döngüsü: unit + edge + Playwright E2E (max 3 tur → needs_human) → commit → PR · Est 5 · Dep T-308
+- [*] **T-310** OpenCode cheap lane runner adaptörü (runAgentForJSON + runAgentFreeText) · Est 3 · Dep T-301
+- [*] **T-311** createSubJobs: complex feature → N child job → parent status='decomposed' · Est 2 · Dep T-305
+- [*] **M3** ✅ Orta zorlukta feature → 8-agent ekip → security+review+test → PR · Dep T-309,T-310,T-311
 
 ## Faz 4 — Router + observability + kapılar · DL 2026-07-19
 - [ ] **T-401** Router: role+complexity → şerit/model seçimi (policy doc 08) · Est 4 · Dep T-308

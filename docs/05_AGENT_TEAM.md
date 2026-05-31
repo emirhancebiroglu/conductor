@@ -1,100 +1,188 @@
-# 05 — Agent Team
+# 05 — Agent Team (v2 — 8 Agent)
 
-> Mini bir dev ekibi. Her rolün **tek bir işi**, **net bir girdisi** ve **yapılandırılmış bir çıktısı** var. Çıktı, bir sonraki agent'ın girdisidir (handoff). Roller dar tutulur çünkü zincir uzadıkça hata çarpışarak büyür.
+## Pipeline
+
+```
+PO → Codebase Analyst → Tech Lead → BE → FE
+                                          │
+                              Security⟲ ←─┘
+                                 │ (2 turda geçemezse → Tech Lead redesign → BE+FE redo)
+                                 │ (redesign de geçemezse → needs_human)
+                              Reviewer⟲
+                                 │ (3 tur, sonra needs_human)
+                               QA⟲
+                                 │ (3 tur, sonra needs_human)
+                                 ▼
+                            commit → push → PR
+                                          ⛔ İNSAN KAPISI
+```
 
 ## Roster
 
-| Agent | İş | Girdi | Çıktı | Varsayılan şerit |
-|-------|----|-------|-------|------------------|
-| **Orchestrator** | sırayı ve döngüleri yönetir, router'ı çağırır | job | run kayıtları, durum | — (kod) |
-| **product-owner** | kısa açıklamayı detaylı spec'e çevirir (web research) | `job.description` | `spec` (kabul kriterleri) | premium (kısa) |
-| **architect** | teknik plan, görev kırılımı, API kontratı, branch | `spec` | `plan` + `api-contract` | premium |
-| **frontend** | UI/UX'i 2026 standardında implemente eder | `plan`, `api-contract` | FE diff | cheap→premium |
-| **backend** | API/DB/iş mantığını implemente eder (FE ile koordineli) | `plan`, `api-contract` | BE diff | cheap→premium |
-| **code-reviewer** | diff'i inceler, sorunları geri gönderir (⟲) | diff | onay veya düzeltme talebi | premium |
-| **tester** | unit+edge+E2E, pass olana kadar (⟲), commit+PR | kod | testler, commit, **PR** | cheap (test) + premium (debug) |
-
-Skill tanımları: `skills/<rol>/SKILL.md`.
+| # | Agent | Tek görevi | Girdi | Çıktı | Şerit |
+|---|-------|-----------|-------|-------|-------|
+| 1 | **product-owner** | Kısa açıklama → spec + kabul kriterleri | job.description | Spec JSON | Premium |
+| 2 | **codebase-analyst** | Repo'yu tara → context.md | repo, spec | context.md | Cheap |
+| 3 | **tech-lead** | Sistem tasarımı + task kırılımı + API kontratı | spec + context.md | Plan JSON | Premium |
+| 4 | **backend-dev** | API / DB / iş mantığı / validation | plan + context.md | BE diff | Cheap→Premium |
+| 5 | **frontend-dev** | UI / UX / state / API entegrasyonu | plan + API contract + context.md | FE diff | Cheap→Premium |
+| 6 | **security-reviewer** | OWASP, auth, injection, data exposure ⟲ | diff + context.md | SecurityReview JSON | Premium |
+| 7 | **code-reviewer** | Kalite, pattern, perf, correctness ⟲ | diff | Review JSON | Premium |
+| 8 | **qa-engineer** | Unit + E2E → pass → commit → PR ⟲ | repo | TestResult JSON | Cheap+Premium |
 
 ---
 
-## Handoff protokolü (önemli)
-Her agent çıktısını **zod ile doğrulanan JSON** olarak verir; orchestrator bunu `runs.output`'a yazar ve sonraki agent'a girdi yapar. Serbest metin handoff yok — drift'i bu engeller.
+## Handoff şemaları (zod)
 
-Örnek `spec` şeması:
 ```ts
-const Spec = z.object({
-  summary: z.string(),
-  user_stories: z.array(z.string()),
-  acceptance_criteria: z.array(z.string()).min(1),
-  out_of_scope: z.array(z.string()),
-  open_questions: z.array(z.string()),   // doluysa → needs_human
-  research_notes: z.array(z.object({ claim: z.string(), source: z.string() })),
-});
+// Spec — PO çıktısı
+{ summary, user_stories, acceptance_criteria, out_of_scope,
+  open_questions, research_notes: [{claim, source}] }
+
+// Plan — Tech Lead çıktısı
+{ approach, complexity: 'simple'|'medium'|'complex',
+  sub_features: null | [{title, description}],   // complex → auto sub-job
+  affected_modules, api_contract: { shared_types, endpoints },
+  tasks: [{id, area, desc, acceptance}],
+  branch, needs_migration, migration, risks }
+
+// SecurityReview
+{ passed: boolean, escalate_to_tech_lead: boolean,
+  issues: [{file, line, severity:'critical'|'high'|'med',
+             category:'auth'|'injection'|'exposure'|'secret'|'other',
+             problem, fix}] }
+
+// Review (code quality)
+{ approved: boolean, escalate: boolean,
+  issues: [{file, line, severity:'high'|'med'|'low',
+             problem, fix, owner:'frontend'|'backend'}] }
+
+// TestResult
+{ passed: boolean, needs_human: boolean,
+  unit: {added, passing}, e2e: {scenarios, passing},
+  failures: string[], commit_message: string }
 ```
-`open_questions` boş değilse orchestrator job'u `needs_human`'a çeker; varsayımla devam YOK.
 
-Örnek `api-contract` (FE+BE'nin koordinasyon noktası):
-```ts
-const ApiContract = z.object({
-  endpoints: z.array(z.object({
-    method: z.enum(['GET','POST','PUT','PATCH','DELETE']),
-    path: z.string(),
-    request: z.any(),     // zod şema referansı/şekli
-    response: z.any(),
-    errors: z.array(z.string()),
-  })),
-  shared_types: z.string(),  // ortak tip tanımları (TS)
-});
+---
+
+## Codebase Analyst — neden kritik
+
+Olmadan: her agent repoyu hiç görmemiş gibi kod yazar → uyumsuz pattern, tekrar eden abstraction, var olan convention'lara uymayan isimler.
+
+Olduğunda: her agent `context.md`'yi okur ve **o repoda yıllardır çalışan biri gibi** davranır.
+
+`context.md` içeriği:
 ```
-FE ve BE **aynı kontrattan** çalışır → entegrasyon sürprizi olmaz.
-
----
-
-## Döngü koşulları (⟲)
-- **Reviewer döngüsü:** reviewer `approved=false` döndürdükçe, sorunları ilgili agent'a (FE/BE) geri gönder. **Max 3 tur.** 3'te de temizlenmezse → `needs_human`, dashboard'da reviewer notlarını göster.
-- **Tester döngüsü:** unit+E2E fail oldukça ilgili agent'a fail logunu gönder. **Max 3 tur.** Sonra → `needs_human`.
-- Her tur `runs.iteration`'ı artırır; dashboard "tur 2/3" gibi gösterir.
-- **Neden max var:** sonsuz döngü = sonsuz maliyet + sonsuz drift. Kapıyı insana aç.
-
----
-
-## FE ↔ BE koordinasyonu
-İki seçenek, v1 için **A**:
-- **A (basit, sıralı):** architect kontratı sabitler → BE implemente eder → FE kontrata göre implemente eder (mock'la başlar). Daha az çakışma.
-- **B (paralel, ileri):** OpenCode agent-team ile FE+BE paralel; mesajlaşma + paylaşılan task board. Faz 3 sonrası dene.
-
----
-
-## Model şeridi (cost) — özet
-- **Cheap (OpenCode Go):** dosya gezme, grep, boilerplate, ilk taslak, basit unit test → MiniMax/DeepSeek Flash sınıfı (çok yüksek istek limiti).
-- **Premium (Claude Code/Pro):** mimari, final review, karmaşık debug, güvenlik-hassas kod.
-- **Yükseltme kuralı:** cheap ile başla; agent "takıldım / belirsiz / 2 turdur düzelmiyor" sinyali verirse premium'a yükselt.
-- Tam policy: `docs/08_COST_AND_LIMITS.md`.
-
----
-
-## Orchestrator akışı (sözde kod)
+## Mimari pattern'ler
+## Naming / dosya convention'ları
+## Mevcut abstraction'lar (hangi util/hook/service/middleware var)
+## Test convention'ları (bu repoda test nasıl yazılıyor)
+## Bu feature ile ilgili dosyalar (muhtemelen değişecekler)
+## Teknik borç / dikkat noktaları
+## Anti-pattern'ler (bu repoda yapılmaması gerekenler)
 ```
-job = takeQueued()
-mark(job, 'running'); branch = openFeatureBranch(job)
-spec = run('product-owner', job.description)
-if spec.open_questions.length: return needHuman(job, spec.open_questions)
-plan = run('architect', spec)
-if plan.needs_migration: requireApproval(job, 'db_migration', plan.migration)
-be = run('backend', plan)            // A: sıralı
-fe = run('frontend', plan, be.contract)
+
+---
+
+## Complexity → Auto Sub-Job
+
+Tech Lead `complexity='complex'` ve `sub_features` dolu döndürürse:
+
+```
+Orchestrator:
+  → Her sub_feature için Supabase'e yeni job yazar
+    (parent_job_id referansıyla, type='feature', status='queued')
+  → Parent job status='decomposed' olur
+  → Dashboard: "Bu feature 3 alt feature'a bölündü" + child job linkleri
+  → Her child bağımsız pipeline'dan geçer → ayrı PR
+  → Sen N adet PR onaylarsın
+```
+
+**Neden sormadan otomatik:** Tech Lead spec + codebase context'ini gördükten sonra en bilgili pozisyonda. Sormak gereksiz gecikme.
+
+---
+
+## Security → Tech Lead Redesign Döngüsü
+
+```
+BE + FE implement eder
+  → Security⟲ max 2 tur:
+      tur 1: sorunları BE/FE'ye gönder → fix → security tekrar
+      tur 2: hâlâ fail
+        → escalate_to_tech_lead=true
+        → Tech Lead: security sorunları + mevcut plan alır
+        → Yeni plan (security-safe yaklaşım) üretir
+        → BE + FE yeniden implement
+        → Security tekrar (max 2 tur)
+        → Hâlâ fail → needs_human (güvenlik açığı çözülemedi)
+  → Security PASS → Code Reviewer'a geç
+```
+
+Max güvenli: 2 security turu + 1 redesign + 2 security turu = 5 security agent çalışması, bounded.
+
+---
+
+## Loop özeti
+
+| Agent | Max tur | Fail sonrası |
+|-------|---------|-------------|
+| Security | 2 | → Tech Lead redesign (1 kez), sonra needs_human |
+| Code Reviewer | 3 | → needs_human |
+| Tester | 3 | → needs_human |
+
+---
+
+## Orchestrator sözde kodu
+
+```
+spec = PO(job)
+if spec.open_questions: → needs_human
+
+context = CodebaseAnalyst(repo, spec)
+plan = TechLead(spec, context)
+
+if plan.complexity == 'complex' && plan.sub_features:
+  createSubJobs(plan.sub_features, parentJobId)
+  markDecomposed(job)
+  return
+
+for i in 1..2:
+  runBackend(plan, context)
+  runFrontend(plan, context)
+  secResult = Security(diff, context)
+  if secResult.passed: break
+  if secResult.escalate_to_tech_lead and i == 1:
+    plan = TechLead(spec, context, securityIssues=secResult.issues)
+    continue
+  if i == 2: → needs_human('security')
+
 for i in 1..3:
-   rev = run('code-reviewer', diff())
-   if rev.approved: break
-   applyFixes(rev.requests)          // ilgili agent'a geri
-else: return needHuman(job, rev)
+  rev = Reviewer(diff)
+  if rev.approved: break
+  applyFixes(rev.issues)
+  if i == 3: → needs_human('review')
+
 for i in 1..3:
-   t = run('tester', repo)
-   if t.passed: break
-   applyFixes(t.failures)
-else: return needHuman(job, t)
-commit(t.message); push(branch); pr = openPR(job, branch)
-mark(job, 'pr_opened', pr.url)       // ⛔ insan: merge SEN
+  t = Tester(repo)
+  if t.passed: break
+  applyFixes(t.failures)
+  if i == 3: → needs_human('test')
+
+commit(t.commit_message) → push → PR → STOP ⛔
 ```
-> Her `run()` çağrısı router'dan şerit/model alır ve `usage_log` yazar.
+
+---
+
+## Model lane özeti
+
+| Görev | Şerit | Gerekçe |
+|-------|-------|---------|
+| PO | Premium (kısa) | Spec kalitesi tüm pipeline'ı belirler |
+| Codebase Analyst | Cheap | Dosya okuma, az generation |
+| Tech Lead | Premium | Mimari karar, en kritik |
+| BE/FE (ilk) | Cheap | Bulk implementasyon |
+| BE/FE (fix) | Premium | Tekrar düzeltemediyse derin sorun |
+| Security | Premium | Güvenlik kör nokta kabul etmez |
+| Reviewer | Premium | Quality gate |
+| Tester (yazma) | Cheap | Test üretimi |
+| Tester (debug) | Premium | Fail analizi |

@@ -47,6 +47,8 @@ export async function cloneAndBranch(
   }
 
   await git(dir, "checkout", "-b", branch);
+  await git(dir, "config", "user.email", "conductor@local");
+  await git(dir, "config", "user.name", "Conductor");
 
   return { dir, branch };
 }

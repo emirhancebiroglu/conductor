@@ -1,1 +1,1 @@
-export { createOctokit, branchExists, createBranch, getFileContent, commitFile, createPR } from "./client";
+export { createOctokit, branchExists, createBranch, getFileContent, commitFile, createPR } from "./client.js";

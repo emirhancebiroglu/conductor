@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { processJob } from "./processJob.js";
+import { getUsageState, updateWorkerStatus } from "./usage.js";
 
 // JobRow defined inline to avoid core export dependency
 type JobRow = {
@@ -61,6 +62,14 @@ let shutdownRequested = false;
 // why: supabase-js generics clash with exactOptionalPropertyTypes; any is intentional here
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function poll(supabase: any): Promise<void> {
+  const usageState = await getUsageState();
+  if (usageState.blocked) {
+    console.log("[worker] hard limit — job alımı duraklatıldı");
+    await updateWorkerStatus("paused_limit", "hard limit hit");
+    return;
+  }
+  await updateWorkerStatus("online");
+
   const { data, error } = await supabase
     .from("jobs")
     .select("*")

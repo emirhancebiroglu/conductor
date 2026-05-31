@@ -29,6 +29,13 @@ const STATUS_META: Record<
     dot: "var(--amber)",
     pulse: true,
   },
+  decomposed: {
+    label: "DECOMPOSED",
+    color: "#f59e0b",
+    bg: "rgba(245,158,11,0.08)",
+    border: "rgba(245,158,11,0.25)",
+    dot: "#f59e0b",
+  },
   review_loop: {
     label: "REVIEW LOOP",
     color: "#60a5fa",
@@ -199,8 +206,6 @@ export function JobDetailClient({ initialJob, initialRuns }: Props) {
     };
   }, [job.id]);
 
-  const meta = STATUS_META[job.status] ?? STATUS_META.queued;
-
   return (
     <div className="max-w-3xl">
       {/* Back */}
@@ -329,7 +334,7 @@ export function JobDetailClient({ initialJob, initialRuns }: Props) {
                     letterSpacing: "-0.01em",
                   }}
                 >
-                  PR'ı İncele
+                  PR&apos;ı İncele
                 </p>
                 <p className="text-xs" style={{ color: "#6ee7b7", fontSize: "10px" }}>
                   {job.pr_url}

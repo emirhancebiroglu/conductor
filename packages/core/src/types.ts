@@ -16,6 +16,7 @@ export type JobType = z.infer<typeof JobTypeSchema>;
 export const JobStatusSchema = z.enum([
   "queued",
   "running",
+  "decomposed",
   "review_loop",
   "test_loop",
   "pr_opened",
@@ -27,11 +28,13 @@ export type JobStatus = z.infer<typeof JobStatusSchema>;
 
 export const AgentNameSchema = z.enum([
   "product-owner",
-  "architect",
-  "frontend",
-  "backend",
+  "codebase-analyst",
+  "tech-lead",
+  "backend-dev",
+  "frontend-dev",
+  "security-reviewer",
   "code-reviewer",
-  "tester",
+  "qa-engineer",
 ]);
 export type AgentName = z.infer<typeof AgentNameSchema>;
 
@@ -48,24 +51,163 @@ export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
 // Embedded JSON column shapes (spec / plan inside jobs)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Handoff schemas (pipeline data contracts between agents)
+// ---------------------------------------------------------------------------
+
+export const ResearchNoteSchema = z.object({
+  claim: z.string(),
+  source: z.string(),
+});
+export type ResearchNote = z.infer<typeof ResearchNoteSchema>;
+
 export const SpecSchema = z.object({
-  acceptanceCriteria: z.array(z.string()),
-  notes: z.string().optional(),
+  summary: z.string(),
+  user_stories: z.array(z.string()),
+  acceptance_criteria: z.array(z.string()),
+  out_of_scope: z.array(z.string()),
+  open_questions: z.array(z.string()),
+  research_notes: z.array(ResearchNoteSchema),
 });
 export type Spec = z.infer<typeof SpecSchema>;
 
+export const SubFeatureSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+});
+export type SubFeature = z.infer<typeof SubFeatureSchema>;
+
+export const ApiEndpointSchema = z.object({
+  method: z.string(),
+  path: z.string(),
+  description: z.string(),
+  request_body: z.unknown().optional(),
+  response: z.unknown().optional(),
+});
+export type ApiEndpoint = z.infer<typeof ApiEndpointSchema>;
+
+export const ApiContractSchema = z.object({
+  shared_types: z.array(z.string()),
+  endpoints: z.array(ApiEndpointSchema),
+});
+export type ApiContract = z.infer<typeof ApiContractSchema>;
+
 export const PlanTaskSchema = z.object({
   id: z.string(),
-  agent: AgentNameSchema,
-  description: z.string(),
+  area: z.enum(["backend", "frontend", "shared", "infra"]),
+  desc: z.string(),
+  acceptance: z.string(),
 });
 export type PlanTask = z.infer<typeof PlanTaskSchema>;
 
 export const PlanSchema = z.object({
+  approach: z.string(),
+  complexity: z.enum(["simple", "medium", "complex"]),
+  sub_features: z.array(SubFeatureSchema).nullable(),
+  affected_modules: z.array(z.string()),
+  api_contract: ApiContractSchema,
   tasks: z.array(PlanTaskSchema),
-  apiContract: z.string().optional(),
+  branch: z.string(),
+  needs_migration: z.boolean(),
+  migration: z.string().nullable(),
+  risks: z.array(z.string()),
 });
 export type Plan = z.infer<typeof PlanSchema>;
+
+const SEC_SEVERITY_MAP: Record<string, "critical" | "high" | "med"> = {
+  medium: "med", moderate: "med",
+};
+const SEC_CATEGORY_MAP: Record<string, "auth" | "injection" | "exposure" | "secret" | "other"> = {
+  data_exposure: "exposure", "data-exposure": "exposure",
+  sql_injection: "injection", "sql-injection": "injection",
+  xss: "injection", secrets: "secret",
+};
+
+export const SecurityIssueSchema = z.object({
+  file: z.string(),
+  line: z.number().int().nullable(),
+  severity: z
+    .string()
+    .transform((v): "critical" | "high" | "med" => {
+      const mapped = SEC_SEVERITY_MAP[v];
+      if (mapped) return mapped;
+      if (v === "critical" || v === "high" || v === "med") return v;
+      return "med";
+    }),
+  category: z
+    .string()
+    .transform((v): "auth" | "injection" | "exposure" | "secret" | "other" => {
+      const mapped = SEC_CATEGORY_MAP[v];
+      if (mapped) return mapped;
+      if (v === "auth" || v === "injection" || v === "exposure" || v === "secret" || v === "other") return v;
+      return "other";
+    }),
+  problem: z.string(),
+  fix: z.string(),
+});
+export type SecurityIssue = {
+  file: string;
+  line: number | null;
+  severity: "critical" | "high" | "med";
+  category: "auth" | "injection" | "exposure" | "secret" | "other";
+  problem: string;
+  fix: string;
+};
+
+export const SecurityReviewSchema = z.object({
+  passed: z.boolean(),
+  escalate_to_tech_lead: z.boolean(),
+  issues: z.array(SecurityIssueSchema),
+});
+export type SecurityReview = {
+  passed: boolean;
+  escalate_to_tech_lead: boolean;
+  issues: SecurityIssue[];
+};
+
+export const ReviewIssueSchema = z.object({
+  file: z.string(),
+  line: z.number().int().nullable(),
+  severity: z
+    .string()
+    .transform((v): "high" | "med" | "low" => {
+      if (v === "medium" || v === "moderate") return "med";
+      if (v === "high" || v === "med" || v === "low") return v;
+      return "med";
+    }),
+  problem: z.string(),
+  fix: z.string(),
+  owner: z.enum(["frontend", "backend"]),
+});
+export type ReviewIssue = {
+  file: string;
+  line: number | null;
+  severity: "high" | "med" | "low";
+  problem: string;
+  fix: string;
+  owner: "frontend" | "backend";
+};
+
+export const ReviewSchema = z.object({
+  approved: z.boolean(),
+  escalate: z.boolean(),
+  issues: z.array(ReviewIssueSchema),
+});
+export type Review = {
+  approved: boolean;
+  escalate: boolean;
+  issues: ReviewIssue[];
+};
+
+export const TestResultSchema = z.object({
+  passed: z.boolean(),
+  needs_human: z.boolean(),
+  unit: z.object({ added: z.number().int(), passing: z.number().int() }),
+  e2e: z.object({ scenarios: z.number().int(), passing: z.number().int() }),
+  failures: z.array(z.string()),
+  commit_message: z.string(),
+});
+export type TestResult = z.infer<typeof TestResultSchema>;
 
 // ---------------------------------------------------------------------------
 // Table: projects
@@ -97,6 +239,7 @@ export type ProjectRow = z.infer<typeof ProjectRowSchema>;
 export const JobSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
+  parentJobId: z.string().uuid().nullable(),
   type: JobTypeSchema,
   title: z.string().min(1),
   description: z.string().min(1),
@@ -116,6 +259,7 @@ export type Job = z.infer<typeof JobSchema>;
 export const JobRowSchema = z.object({
   id: z.string().uuid(),
   project_id: z.string().uuid(),
+  parent_job_id: z.string().uuid().nullable(),
   type: JobTypeSchema,
   title: z.string(),
   description: z.string(),

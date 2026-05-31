@@ -2,12 +2,10 @@
 
 > **Bu dosya canlıdır.** Agent'lar ve sen, "nerede kaldık" sorusunun cevabını buradan okur — sohbet geçmişine güvenme. Her oturum başı oku, her oturum sonu güncelle. Eskiyen satırı sil.
 
-## ⏱️ Şu an
-- **Faz:** 0 — Foundations
-- **Aktif görev:** T-001 (hesaplar/erişim)
-- **Bu hafta hedefi:** M0 — elle tetiklenen script gerçek PR açsın
-- **Sonraki milestone:** M0 (2026-06-07)
-- **Blokerler:** yok
+## Şu an
+- Faz: 4 — Cost router + observability + insan kapıları
+- Aktif görev: T-401
+- Son milestone: M3 ✅ (2026-06-XX)
 
 ## 📌 Bu hafta (Pazartesi'de doldur)
 - [ ] …

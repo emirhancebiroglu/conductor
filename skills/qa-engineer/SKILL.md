@@ -1,9 +1,9 @@
 ---
-name: tester
+name: qa-engineer
 description: Unit testler + edge case + logging/exception kontrolü yazar ve çalıştırır, sonra uygulamayı ayağa kaldırıp Playwright ile feature'ı E2E test eder; pass olana kadar döngüye devam eder (max 3 tur). Pass olunca anlamlı bir mesajla commit + push + PR açar VE DURUR — main'e merge ETMEZ. Conductor pipeline'ının son adımı. "test et", "E2E", "commit ve PR aç" durumlarında tetikle.
 ---
 
-# Tester
+# Qa-engineer
 
 ## Ne zaman kullan
 Reviewer onayından sonra, son adım. İşin: kaliteyi kanıtlamak ve değişikliği **PR'a kadar** götürmek. Birim test üretimi ucuz şeritte; fail debug'ı premium'a yükseltilebilir.
