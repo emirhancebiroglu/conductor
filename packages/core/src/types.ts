@@ -16,6 +16,7 @@ export type JobType = z.infer<typeof JobTypeSchema>;
 export const JobStatusSchema = z.enum([
   "queued",
   "running",
+  "waiting_input",
   "decomposed",
   "review_loop",
   "test_loop",
@@ -92,9 +93,22 @@ export const ApiContractSchema = z.object({
 });
 export type ApiContract = z.infer<typeof ApiContractSchema>;
 
+const PLAN_TASK_AREA_MAP: Record<string, "backend" | "frontend" | "shared" | "infra"> = {
+  config: "infra", lib: "shared", types: "shared", hook: "frontend",
+  test: "shared", util: "shared", db: "backend", api: "backend",
+};
+
+// z.enum().catch() preserves the literal union output type (unlike z.string().transform)
 export const PlanTaskSchema = z.object({
   id: z.string(),
-  area: z.enum(["backend", "frontend", "shared", "infra"]),
+  area: z.preprocess(
+    (v) => {
+      const s = String(v);
+      const known = ["backend", "frontend", "shared", "infra"];
+      return known.includes(s) ? s : (PLAN_TASK_AREA_MAP[s] ?? "shared");
+    },
+    z.enum(["backend", "frontend", "shared", "infra"]),
+  ),
   desc: z.string(),
   acceptance: z.string(),
 });
@@ -269,6 +283,7 @@ export const JobRowSchema = z.object({
   pr_url: z.string().nullable(),
   spec: z.unknown().nullable(),
   plan: z.unknown().nullable(),
+  answers: z.record(z.string()).nullable(),
   error: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),

@@ -12,6 +12,7 @@ export type Job = {
   description: string;
   type: string;
   lane_preference: string;
+  answers?: Record<string, string> | null;
 };
 
 function requireEnv(key: string): string {
@@ -57,6 +58,7 @@ export async function processJob(supabase: SupabaseAny, job: Job): Promise<void>
       { ...job },
       { owner, repo, default_branch: defaultBranch },
       repoDir,
+      job.answers ?? undefined,
     );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -10,11 +10,13 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data } = await supabase
+  // why: worker_status is a view/table not in generated types yet
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
     .from("worker_status")
     .select("status, reason, updated_at")
     .limit(1)
-    .maybeSingle();
+    .maybeSingle() as { data: { status: string; reason: string | null; updated_at: string | null } | null };
 
   return NextResponse.json({
     status: data?.status ?? "online",

@@ -184,6 +184,7 @@ export async function runPipeline(
   job: OrchestratorJob,
   project: OrchestratorProject,
   repoDir: string,
+  answers?: Record<string, string>,
 ): Promise<void> {
   const token = process.env["CONDUCTOR_GITHUB_TOKEN"] ?? "";
   const baseOpts = { repoDir, jobId: job.id, supabase };
@@ -192,18 +193,19 @@ export async function runPipeline(
   let spec: Spec;
   try {
     await logRoute("product-owner", "implement");
-    spec = await runProductOwner({ ...baseOpts, title: job.title, description: job.description });
+    spec = await runProductOwner({
+      ...baseOpts,
+      title: job.title,
+      description: job.description,
+      ...(answers ? { answers } : {}),
+    });
   } catch (err) {
     await needsHuman(supabase, job.id, `PO agent hatası: ${String(err)}`);
     return;
   }
 
   if (spec.open_questions.length > 0) {
-    await needsHuman(
-      supabase,
-      job.id,
-      `PO soruları yanıt bekliyor: ${spec.open_questions.join(" | ")}`,
-    );
+    await updateJob(supabase, job.id, { status: "waiting_input", spec });
     return;
   }
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type WorkerStatus = "online" | "paused_limit" | "paused_manual";
 
@@ -10,24 +11,35 @@ function useWorkerStatus(): WorkerStatus {
   const [status, setStatus] = useState<WorkerStatus>("online");
 
   useEffect(() => {
-    let cancelled = false;
+    const supabase = createClient();
 
-    async function fetch_() {
-      try {
-        const res = await fetch("/api/worker-status");
-        if (!res.ok) return;
-        const json = (await res.json()) as { status: WorkerStatus };
-        if (!cancelled) setStatus(json.status);
-      } catch {
-        // non-fatal
-      }
-    }
+    // Initial fetch — worker_status not in generated types, cast via any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from("worker_status")
+      .select("status")
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }: { data: { status: string } | null }) => {
+        if (data) setStatus(data.status as WorkerStatus);
+      })
+      .catch(() => {/* non-fatal */});
 
-    void fetch_();
-    const interval = setInterval(() => void fetch_(), 10_000);
+    // Realtime updates — no more polling
+    const channel = supabase
+      .channel("worker-status")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "worker_status" },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as { status?: string } | null;
+          if (row?.status) setStatus(row.status as WorkerStatus);
+        },
+      )
+      .subscribe();
+
     return () => {
-      cancelled = true;
-      clearInterval(interval);
+      void supabase.removeChannel(channel);
     };
   }, []);
 

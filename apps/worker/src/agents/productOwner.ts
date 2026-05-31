@@ -38,15 +38,26 @@ export type ProductOwnerOptions = Pick<AgentRunOptions, "repoDir" | "jobId" | "s
   description: string;
   title: string;
   usageState?: UsageState;
+  answers?: Record<string, string>;
 };
 
 export async function runProductOwner(options: ProductOwnerOptions): Promise<Spec> {
-  const { description, title, usageState, ...rest } = options;
+  const { description, title, usageState, answers, ...rest } = options;
   const route = resolveRoute("product-owner", "implement", usageState ?? { goMonthlyUsedUSD: 0, goWeeklyUsedUSD: 0, go5hUsedUSD: 0, softLimitHit: false, hardLimitHit: false });
+
+  let userPrompt = `FEATURE BAŞLIĞI: ${title}\n\nKISA AÇIKLAMA:\n${description}`;
+
+  if (answers && Object.keys(answers).length > 0) {
+    const answersText = Object.entries(answers)
+      .map(([q, a]) => `Soru: ${q}\nCevap: ${a}`)
+      .join("\n\n");
+    userPrompt += `\n\nKullanıcı şu soruları yanıtladı:\n${answersText}\n\nBu cevapları kullanarak spec'i üret. open_questions'ı boş bırak.`;
+  }
+
   return runAgentForJSON({
     ...rest,
     systemPrompt: SYSTEM_PROMPT,
-    userPrompt: `FEATURE BAŞLIĞI: ${title}\n\nKISA AÇIKLAMA:\n${description}`,
+    userPrompt,
     agentName: "product-owner",
     lane: route.lane,
     model: route.model,

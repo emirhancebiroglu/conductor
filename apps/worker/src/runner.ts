@@ -39,8 +39,12 @@ function claudeBin(): string {
   return process.env["CLAUDE_PATH"] ?? "claude";
 }
 
-// On Windows, `opencode` is a .ps1 shim — not directly spawnable with shell:false.
-// Resolve to: node <opencode-js-entry> so spawn works cross-platform.
+// On Windows, opencode ships as a .cmd/.ps1 shim — not spawnable with shell:false.
+// Resolution order:
+//   1. OPENCODE_PATH env var (explicit override)
+//   2. node <jsEntry>  — works if opencode-ai is in the node global modules
+//   3. cmd.exe /c opencode — delegates to PATH resolution via cmd on Windows
+//   4. bare "opencode" — works on Linux/macOS where it is a real binary
 function opencodeArgs(): { bin: string; prefix: string[] } {
   const envPath = process.env["OPENCODE_PATH"];
   if (envPath) return { bin: envPath, prefix: [] };
@@ -50,11 +54,14 @@ function opencodeArgs(): { bin: string; prefix: string[] } {
   const nodeDir = nodeBin.replace(/[/\\][^/\\]+$/, ""); // parent dir
   const jsEntry = `${nodeDir}/node_modules/opencode-ai/bin/opencode`;
 
-  // Check if it exists; fall back to bare "opencode" (works on Linux/macOS)
   try {
     accessSync(jsEntry);
     return { bin: nodeBin, prefix: [jsEntry] };
   } catch {
+    // On Windows, use cmd.exe /c so the .cmd shim on PATH resolves correctly
+    if (process.platform === "win32") {
+      return { bin: "cmd.exe", prefix: ["/c", "opencode"] };
+    }
     return { bin: "opencode", prefix: [] };
   }
 }
@@ -185,8 +192,8 @@ async function logRun(
   payload: Record<string, unknown>,
   iteration = 1,
   model?: string,
-): Promise<void> {
-  const { error } = await supabase.from("runs").insert({
+): Promise<string | null> {
+  const { data, error } = await supabase.from("runs").insert({
     job_id: jobId,
     agent: agentName,
     lane,
@@ -195,11 +202,13 @@ async function logRun(
     input: status === "started" ? payload : null,
     output: status !== "started" ? payload : null,
     iteration,
-  });
+  }).select("id").maybeSingle();
   if (error) {
     // non-fatal
     console.error(`[runner] logRun failed: ${(error as { message: string }).message}`);
+    return null;
   }
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,8 +257,9 @@ export async function runAgentForJSON<T>(
 
   const fullPrompt = `${systemPrompt}\n\n${userPrompt}${JSON_SUFFIX}`;
 
+  let startedRunId: string | null = null;
   if (supabase) {
-    await logRun(supabase, jobId, agentName, lane, "started", { prompt: userPrompt }, 1, model);
+    startedRunId = await logRun(supabase, jobId, agentName, lane, "started", { prompt: userPrompt }, 1, model);
   }
 
   let lastParseError = "";
@@ -273,7 +283,9 @@ export async function runAgentForJSON<T>(
       throw new Error(`[${agentName}] agent failed: ${result.error}`);
     }
 
-    await logUsage(jobId, prompt, result.output, lane, model ?? modelLabel(lane));
+    if (startedRunId) {
+      await logUsage(startedRunId, prompt, result.output, lane, model ?? modelLabel(lane));
+    }
 
     const raw = extractJson(result.output);
 
@@ -305,8 +317,9 @@ export async function runAgentFreeText(options: AgentRunOptions): Promise<string
 
   const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
+  let startedRunId: string | null = null;
   if (supabase) {
-    await logRun(supabase, jobId, agentName, lane, "started", { prompt: userPrompt }, 1, model);
+    startedRunId = await logRun(supabase, jobId, agentName, lane, "started", { prompt: userPrompt }, 1, model);
   }
 
   const result = await spawnAgent(lane, fullPrompt, repoDir, onLine, model);
@@ -318,7 +331,9 @@ export async function runAgentFreeText(options: AgentRunOptions): Promise<string
     throw new Error(`[${agentName}] agent failed: ${result.error}`);
   }
 
-  await logUsage(jobId, fullPrompt, result.output, lane, model ?? modelLabel(lane));
+  if (startedRunId) {
+    await logUsage(startedRunId, fullPrompt, result.output, lane, model ?? modelLabel(lane));
+  }
 
   if (supabase) {
     await logRun(supabase, jobId, agentName, lane, "ok", { length: result.output.length }, 1, model);

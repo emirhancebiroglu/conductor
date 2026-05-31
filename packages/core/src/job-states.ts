@@ -3,6 +3,7 @@ import type { JobStatus } from "./types.js";
 export const JOB_STATUS = {
   QUEUED: "queued",
   RUNNING: "running",
+  WAITING_INPUT: "waiting_input",
   DECOMPOSED: "decomposed",
   REVIEW_LOOP: "review_loop",
   TEST_LOOP: "test_loop",
@@ -28,7 +29,8 @@ export const ACTIVE_STATUSES: ReadonlySet<JobStatus> = new Set([
 /** Valid transitions in the state machine. */
 export const TRANSITIONS: Readonly<Record<JobStatus, ReadonlyArray<JobStatus>>> = {
   queued: ["running", "failed"],
-  running: ["decomposed", "review_loop", "test_loop", "pr_opened", "failed", "needs_human"],
+  running: ["waiting_input", "decomposed", "review_loop", "test_loop", "pr_opened", "failed", "needs_human"],
+  waiting_input: ["queued", "failed"],
   decomposed: [],
   review_loop: ["running", "test_loop", "failed", "needs_human"],
   test_loop: ["pr_opened", "review_loop", "failed", "needs_human"],

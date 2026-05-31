@@ -8,6 +8,7 @@ import type { JobRow, JobStatus } from "@conductor/core";
 interface Props {
   initialJobs: JobRow[];
   projectMap: Record<string, { owner: string; repo: string }>;
+  costByJob: Record<string, number>;
 }
 
 type StatusMeta = {
@@ -87,6 +88,14 @@ const STATUS_META: Record<JobStatus, StatusMeta> = {
     dot: "#fb923c",
     pulse: true,
   },
+  waiting_input: {
+    label: "WAITING",
+    color: "#fbbf24",
+    bg: "rgba(251,191,36,0.08)",
+    border: "rgba(251,191,36,0.3)",
+    dot: "#fbbf24",
+    pulse: true,
+  },
 };
 
 function formatRelative(iso: string): string {
@@ -127,7 +136,7 @@ function StatusBadge({ status }: { status: JobStatus }) {
   );
 }
 
-export function JobsClient({ initialJobs, projectMap }: Props) {
+export function JobsClient({ initialJobs, projectMap, costByJob }: Props) {
   const [jobs, setJobs] = useState<JobRow[]>(initialJobs);
 
   useEffect(() => {
@@ -262,11 +271,11 @@ export function JobsClient({ initialJobs, projectMap }: Props) {
           <div
             className="grid px-4 pb-2"
             style={{
-              gridTemplateColumns: "1fr 160px 110px 80px",
+              gridTemplateColumns: "1fr 160px 110px 72px 80px",
               borderBottom: "1px solid var(--border)",
             }}
           >
-            {["JOB", "PROJECT", "STATUS", "WHEN"].map((h) => (
+            {["JOB", "PROJECT", "STATUS", "COST", "WHEN"].map((h) => (
               <span
                 key={h}
                 className="uppercase tracking-widest"
@@ -286,7 +295,7 @@ export function JobsClient({ initialJobs, projectMap }: Props) {
                   href={`/dashboard/jobs/${job.id}`}
                   className="grid px-4 py-3.5 group transition-colors"
                   style={{
-                    gridTemplateColumns: "1fr 160px 110px 80px",
+                    gridTemplateColumns: "1fr 160px 110px 72px 80px",
                     borderBottom: "1px solid var(--border)",
                     backgroundColor: "transparent",
                     animationDelay: `${i * 30}ms`,
@@ -338,6 +347,23 @@ export function JobsClient({ initialJobs, projectMap }: Props) {
                   {/* Status */}
                   <div className="flex items-center">
                     <StatusBadge status={job.status} />
+                  </div>
+
+                  {/* Cost */}
+                  <div className="flex items-center">
+                    {costByJob[job.id] !== undefined ? (
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          fontFamily: "JetBrains Mono, monospace",
+                          color: "#34d399",
+                        }}
+                      >
+                        ${costByJob[job.id]!.toFixed(2)}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: "10px", color: "var(--text-dim)" }}>—</span>
+                    )}
                   </div>
 
                   {/* When */}

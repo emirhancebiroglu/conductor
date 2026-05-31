@@ -31,7 +31,12 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  // E2E test fixture bypass — never active in production
+  const fixtureParam = request.nextUrl.searchParams.get("__fixture");
+  const isTestFixture = process.env.NODE_ENV !== "production" && fixtureParam !== null;
+
   const isPublic =
+    isTestFixture ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/auth/") ||
     pathname === "/";
@@ -46,6 +51,21 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
+  }
+
+  // Pass fixture flag as request header so layout.tsx can read it via headers()
+  if (isTestFixture) {
+    const res = NextResponse.next({
+      request: {
+        headers: new Headers({
+          ...Object.fromEntries(request.headers.entries()),
+          "x-fixture": fixtureParam ?? "1",
+        }),
+      },
+    });
+    // Copy cookies from supabaseResponse
+    supabaseResponse.cookies.getAll().forEach(({ name, value }) => res.cookies.set(name, value));
+    return res;
   }
 
   return supabaseResponse;

@@ -87,6 +87,8 @@ ${contextContent}
 
 Yukarıdaki spec ve context'e göre teknik plan üret.`;
 
+  // why: PlanTaskSchema uses z.preprocess whose output TS infers as unknown; cast to Plan is safe at runtime
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return runAgentForJSON({
     ...rest,
     repoDir,
@@ -95,6 +97,6 @@ Yukarıdaki spec ve context'e göre teknik plan üret.`;
     agentName: "tech-lead",
     lane: route.lane,
     model: route.model,
-    schema: PlanSchema,
-  });
+    schema: PlanSchema as any,
+  }) as Promise<Plan>;
 }

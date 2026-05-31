@@ -17,6 +17,7 @@ type JobRow = {
   pr_url: string | null;
   spec: unknown;
   plan: unknown;
+  answers: Record<string, string> | null;
   error: string | null;
   created_at: string;
   updated_at: string;
