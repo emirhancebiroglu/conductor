@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 import { createClient } from "@/lib/supabase/client";
 import type { JobRow, RunRow, JobStatus, RunStatus } from "@conductor/core";
 
@@ -97,6 +98,36 @@ const STATUS_META: Record<
     dot: "#fbbf24",
     pulse: true,
   },
+  researching: {
+    label: "RESEARCHING",
+    color: "#38bdf8",
+    bg: "rgba(56,189,248,0.08)",
+    border: "rgba(56,189,248,0.25)",
+    dot: "#38bdf8",
+    pulse: true,
+  },
+  prd_ready: {
+    label: "PRD READY",
+    color: "#4ade80",
+    bg: "rgba(74,222,128,0.08)",
+    border: "rgba(74,222,128,0.25)",
+    dot: "#4ade80",
+  },
+  scaffolding: {
+    label: "SCAFFOLDING",
+    color: "#c084fc",
+    bg: "rgba(192,132,252,0.08)",
+    border: "rgba(192,132,252,0.25)",
+    dot: "#c084fc",
+    pulse: true,
+  },
+  idea_exhausted: {
+    label: "IDEA EXHAUSTED",
+    color: "#94a3b8",
+    bg: "rgba(148,163,184,0.08)",
+    border: "rgba(148,163,184,0.25)",
+    dot: "#94a3b8",
+  },
 };
 
 const RUN_STATUS_META: Record<RunStatus, { color: string; icon: string }> = {
@@ -119,6 +150,24 @@ const AGENT_LABELS: Record<string, string> = {
   frontend: "Frontend",
   backend: "Backend",
   tester: "Tester",
+  // idea pipeline
+  scout: "Scout",
+  executioner: "Executioner",
+  advocate: "Advocate",
+  adversary: "Adversary",
+  judge: "Judge",
+  "product-manager": "Product Manager",
+  scaffolder: "Scaffolder",
+};
+
+const IDEA_AGENT_ICONS: Record<string, string> = {
+  scout: "🔍",
+  executioner: "⚡",
+  advocate: "💚",
+  adversary: "🔴",
+  judge: "⚖️",
+  "product-manager": "📋",
+  scaffolder: "🏗️",
 };
 
 // ---------------------------------------------------------------------------
@@ -414,6 +463,277 @@ function WaitingInputForm({ job }: { job: JobRow }) {
 }
 
 // ---------------------------------------------------------------------------
+// PRD Review Panel (status=prd_ready)
+// ---------------------------------------------------------------------------
+
+function ResearchAccordion({ research }: { research: Record<string, unknown> }) {
+  const [open, setOpen] = useState(false);
+  const judge = research.judgeResult as Record<string, unknown> | null;
+  const scout = research.scoutResult as Record<string, unknown> | null;
+  const topIdea = Array.isArray(scout?.ideas) ? (scout!.ideas as Record<string, unknown>[])[0] : null;
+  const scores = topIdea?.scores as Record<string, number> | null;
+  const winningArgs = Array.isArray(judge?.winning_arguments) ? judge!.winning_arguments as string[] : [];
+  const risks = Array.isArray(judge?.acknowledged_risks) ? judge!.acknowledged_risks as string[] : [];
+
+  return (
+    <div className="border" style={{ borderColor: "var(--border)" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-left flex items-center justify-between px-4 py-3"
+        style={{ background: "var(--surface-raised)", border: "none", cursor: "pointer" }}
+      >
+        <span className="uppercase tracking-widest" style={{ fontSize: "9px", color: "var(--text-dim)", letterSpacing: "0.14em" }}>
+          Araştırma Özeti
+        </span>
+        <span style={{ fontSize: "9px", color: "var(--text-dim)", transform: open ? "rotate(90deg)" : "none", display: "inline-block", transition: "transform 0.15s" }}>▶</span>
+      </button>
+      {open && (
+        <div className="px-4 py-4 flex flex-col gap-5" style={{ borderTop: "1px solid var(--border)" }}>
+          {winningArgs.length > 0 && (
+            <div>
+              <p className="uppercase tracking-widest mb-2" style={{ fontSize: "8px", color: "#4ade80", letterSpacing: "0.14em" }}>Kazanan Argümanlar</p>
+              <ul className="flex flex-col gap-1">
+                {winningArgs.map((a, i) => (
+                  <li key={i} style={{ fontSize: "11px", color: "var(--text-secondary)", fontFamily: "JetBrains Mono, monospace", display: "flex", gap: 8 }}>
+                    <span style={{ color: "#4ade80", flexShrink: 0 }}>✓</span>{a}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {risks.length > 0 && (
+            <div>
+              <p className="uppercase tracking-widest mb-2" style={{ fontSize: "8px", color: "#fb923c", letterSpacing: "0.14em" }}>Riskler</p>
+              <ul className="flex flex-col gap-1">
+                {risks.map((r, i) => (
+                  <li key={i} style={{ fontSize: "11px", color: "var(--text-secondary)", fontFamily: "JetBrains Mono, monospace", display: "flex", gap: 8 }}>
+                    <span style={{ color: "#fb923c", flexShrink: 0 }}>!</span>{r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {scores && (
+            <div>
+              <p className="uppercase tracking-widest mb-2" style={{ fontSize: "8px", color: "var(--text-dim)", letterSpacing: "0.14em" }}>Fırsat Skorları</p>
+              <div className="flex flex-col gap-2">
+                {Object.entries(scores).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-3">
+                    <span style={{ fontSize: "9px", color: "var(--text-dim)", width: 120, flexShrink: 0, textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</span>
+                    <div style={{ flex: 1, height: 4, backgroundColor: "var(--border)", position: "relative" }}>
+                      <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${Math.min(100, (v / 10) * 100)}%`, backgroundColor: "#38bdf8" }} />
+                    </div>
+                    <span style={{ fontSize: "9px", color: "var(--text-secondary)", fontFamily: "JetBrains Mono, monospace", width: 24, textAlign: "right" }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PrdReviewPanel({ job }: { job: JobRow }) {
+  const [editing, setEditing] = useState(false);
+  const [prdContent, setPrdContent] = useState(job.prd ?? "");
+  const [saving, setSaving] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const research = (job.research_output as Record<string, unknown> | null) ?? {};
+
+  async function handleApprove() {
+    setApproving(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/approve-prd`, { method: "POST" });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(d.error ?? "Hata oluştu");
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Hata oluştu");
+      setApproving(false);
+    }
+  }
+
+  async function handleSavePrd() {
+    setSaving(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prd: prdContent }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(d.error ?? "Hata oluştu");
+      }
+      setEditing(false);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Hata oluştu");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!confirm("Bu fikir job'u iptal etmek istediğinizden emin misiniz?")) return;
+    setCancelling(true);
+    setActionError(null);
+    try {
+      await fetch(`/api/jobs/${job.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "failed", error: "user_cancelled" }),
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Hata oluştu");
+      setCancelling(false);
+    }
+  }
+
+  return (
+    <div className="mb-6">
+      {/* Banner */}
+      <div
+        className="flex items-center gap-3 px-5 py-3 mb-4 border"
+        style={{ borderColor: "rgba(251,146,60,0.35)", backgroundColor: "rgba(251,146,60,0.05)" }}
+      >
+        <span style={{ fontSize: "14px" }}>📋</span>
+        <span className="uppercase tracking-widest" style={{ color: "#fb923c", fontSize: "10px", letterSpacing: "0.12em", fontFamily: "Syne, sans-serif", flex: 1 }}>
+          PRD hazır — incelemenizi bekliyor
+        </span>
+      </div>
+
+      {/* Research accordion */}
+      <div className="mb-4">
+        <ResearchAccordion research={research} />
+      </div>
+
+      {/* PRD content */}
+      <div className="mb-4 border" style={{ borderColor: "var(--border)" }}>
+        <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: "1px solid var(--border)", backgroundColor: "var(--surface-raised)" }}>
+          <span className="uppercase tracking-widest" style={{ fontSize: "9px", color: "var(--text-dim)", letterSpacing: "0.14em" }}>
+            PRD
+          </span>
+          {!editing && (
+            <button
+              onClick={() => setEditing(true)}
+              style={{ fontSize: "9px", color: "#fb923c", background: "none", border: "none", cursor: "pointer", letterSpacing: "0.08em" }}
+            >
+              ✏️ DÜZENLE
+            </button>
+          )}
+        </div>
+
+        {editing ? (
+          <div className="p-3">
+            <textarea
+              value={prdContent}
+              onChange={(e) => setPrdContent(e.target.value)}
+              rows={20}
+              style={{
+                width: "100%",
+                padding: "10px",
+                fontSize: "11px",
+                fontFamily: "JetBrains Mono, monospace",
+                color: "var(--text-primary)",
+                backgroundColor: "var(--surface-overlay)",
+                border: "1px solid rgba(251,146,60,0.3)",
+                outline: "none",
+                resize: "vertical",
+                lineHeight: 1.7,
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(251,146,60,0.6)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(251,146,60,0.3)")}
+            />
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={handleSavePrd}
+                disabled={saving}
+                style={{
+                  padding: "6px 16px", fontSize: "9px", fontFamily: "Syne, sans-serif",
+                  color: "#0c1524", backgroundColor: saving ? "rgba(251,146,60,0.5)" : "#fb923c",
+                  border: "none", cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.1em", textTransform: "uppercase",
+                }}
+              >
+                {saving ? "Kaydediliyor…" : "Kaydet"}
+              </button>
+              <button
+                onClick={() => { setEditing(false); setPrdContent(job.prd ?? ""); }}
+                disabled={saving}
+                style={{
+                  padding: "6px 16px", fontSize: "9px", fontFamily: "Syne, sans-serif",
+                  color: "var(--text-secondary)", backgroundColor: "var(--surface-raised)",
+                  border: "1px solid var(--border)", cursor: "pointer", letterSpacing: "0.1em", textTransform: "uppercase",
+                }}
+              >
+                İptal
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="px-5 py-4 prose-sm"
+            style={{
+              fontSize: "12px", lineHeight: 1.8, color: "var(--text-secondary)",
+              maxHeight: 480, overflowY: "auto",
+            }}
+          >
+            <ReactMarkdown>{prdContent || "PRD içeriği yok."}</ReactMarkdown>
+          </div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      {!editing && (
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleApprove}
+            disabled={approving}
+            style={{
+              padding: "8px 20px", fontSize: "10px", fontFamily: "Syne, sans-serif", letterSpacing: "0.1em",
+              color: approving ? "var(--text-dim)" : "#0c1524",
+              backgroundColor: approving ? "rgba(74,222,128,0.2)" : "#4ade80",
+              border: `1px solid ${approving ? "rgba(74,222,128,0.3)" : "#4ade80"}`,
+              cursor: approving ? "not-allowed" : "pointer", textTransform: "uppercase",
+            }}
+            onMouseEnter={(e) => !approving && (e.currentTarget.style.backgroundColor = "#86efac")}
+            onMouseLeave={(e) => !approving && (e.currentTarget.style.backgroundColor = "#4ade80")}
+          >
+            {approving ? "Onaylanıyor…" : "✅ Onayla ve Scaffold Et"}
+          </button>
+          <button
+            onClick={handleCancel}
+            disabled={cancelling}
+            style={{
+              padding: "8px 16px", fontSize: "10px", fontFamily: "Syne, sans-serif", letterSpacing: "0.1em",
+              color: cancelling ? "var(--text-dim)" : "#f87171",
+              backgroundColor: "transparent",
+              border: `1px solid ${cancelling ? "rgba(248,113,113,0.2)" : "rgba(248,113,113,0.35)"}`,
+              cursor: cancelling ? "not-allowed" : "pointer", textTransform: "uppercase",
+            }}
+          >
+            {cancelling ? "İptal ediliyor…" : "❌ İptal"}
+          </button>
+        </div>
+      )}
+
+      {actionError && (
+        <p className="mt-3" style={{ fontSize: "11px", color: "#f87171", fontFamily: "JetBrains Mono, monospace" }}>
+          {actionError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Job status banners
 // ---------------------------------------------------------------------------
 
@@ -582,6 +902,152 @@ function JobBanners({
     return <WaitingInputForm job={job} />;
   }
 
+  // ── Idea pipeline statuses ──────────────────────────────────────────────────
+
+  if (job.status === "researching") {
+    return (
+      <div
+        className="mb-6 px-5 py-4 border flex items-center gap-3"
+        style={{ borderColor: "rgba(56,189,248,0.3)", backgroundColor: "rgba(56,189,248,0.05)" }}
+      >
+        <span style={{ color: "#38bdf8", animation: "pulse 1.5s ease-in-out infinite", fontSize: "14px" }}>🔍</span>
+        <div>
+          <span className="uppercase tracking-widest" style={{ color: "#38bdf8", fontSize: "10px", letterSpacing: "0.12em", fontFamily: "Syne, sans-serif" }}>
+            Araştırılıyor…
+          </span>
+          {job.current_step_message && (
+            <p style={{ marginTop: 2, fontSize: "10px", color: "#7dd3fc", fontFamily: "JetBrains Mono, monospace" }}>
+              {job.current_step_message}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (job.status === "prd_ready") {
+    return <PrdReviewPanel job={job} />;
+  }
+
+  if (job.status === "scaffolding") {
+    return (
+      <div
+        className="mb-6 px-5 py-4 border flex items-center gap-3"
+        style={{ borderColor: "rgba(192,132,252,0.3)", backgroundColor: "rgba(192,132,252,0.05)" }}
+      >
+        <span style={{ fontSize: "14px" }}>🏗️</span>
+        <span className="uppercase tracking-widest" style={{ color: "#c084fc", fontSize: "10px", letterSpacing: "0.12em", fontFamily: "Syne, sans-serif" }}>
+          Repo iskeleti oluşturuluyor…
+        </span>
+      </div>
+    );
+  }
+
+  if (job.status === "idea_exhausted") {
+    let parsed: Record<string, unknown> = {};
+    try { parsed = JSON.parse(job.error ?? "{}") as Record<string, unknown>; } catch { /* noop */ }
+    return (
+      <div
+        className="mb-6 border"
+        style={{ borderColor: "rgba(248,113,113,0.3)", backgroundColor: "rgba(248,113,113,0.04)" }}
+      >
+        <div className="flex items-center gap-2 px-5 py-3" style={{ borderBottom: "1px solid rgba(248,113,113,0.15)" }}>
+          <span style={{ color: "#f87171" }}>❌</span>
+          <span className="uppercase tracking-widest" style={{ color: "#f87171", fontSize: "10px", letterSpacing: "0.12em", fontFamily: "Syne, sans-serif" }}>
+            3 turda fikir bulunamadı
+          </span>
+        </div>
+        <div className="px-5 py-4 flex flex-col gap-2">
+          {parsed.loops_completed !== undefined && (
+            <p style={{ fontSize: "11px", color: "var(--text-secondary)", fontFamily: "JetBrains Mono, monospace" }}>
+              Tamamlanan tur: {String(parsed.loops_completed)}
+            </p>
+          )}
+          {typeof parsed.summary === "string" && (
+            <p style={{ fontSize: "11px", color: "var(--text-secondary)", fontFamily: "JetBrains Mono, monospace" }}>
+              {parsed.summary}
+            </p>
+          )}
+          {parsed.last_constraints != null && (
+            <pre style={{ fontSize: "10px", color: "var(--text-dim)", fontFamily: "JetBrains Mono, monospace", whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(parsed.last_constraints, null, 2)}
+            </pre>
+          )}
+          <div className="mt-3">
+            <Link
+              href="/dashboard/ideas/new"
+              style={{
+                display: "inline-block", padding: "6px 16px", fontSize: "9px",
+                fontFamily: "Syne, sans-serif", letterSpacing: "0.12em", textTransform: "uppercase",
+                color: "#fca5a5", border: "1px solid rgba(248,113,113,0.3)", textDecoration: "none",
+              }}
+            >
+              Farklı tema ile tekrar dene →
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Idea run detail enrichment
+// ---------------------------------------------------------------------------
+
+function IdeaRunDetail({ run }: { run: RunRow }) {
+  const out = run.output && typeof run.output === "object"
+    ? ((run.output as Record<string, unknown>).output as Record<string, unknown> | undefined)
+    : undefined;
+
+  if (run.agent === "judge" && out) {
+    const decision = typeof out.decision === "string" ? out.decision : undefined;
+    if (!decision) return null;
+    const color = decision === "pass" ? "#4ade80" : decision === "deadlock" ? "#f87171" : "#fb923c";
+    return (
+      <div className="mt-2 flex items-center gap-2">
+        <span style={{ fontSize: "8px", color: "var(--text-dim)", letterSpacing: "0.12em" }}>KARAR</span>
+        <span style={{ padding: "2px 8px", fontSize: "9px", fontFamily: "JetBrains Mono, monospace", letterSpacing: "0.1em", color, border: `1px solid ${color}`, backgroundColor: `${color}11` }}>
+          {decision.toUpperCase()}
+        </span>
+      </div>
+    );
+  }
+
+  if (run.agent === "advocate" && out) {
+    const arg = typeof out.strongest_argument === "string" ? out.strongest_argument : undefined;
+    if (!arg) return null;
+    return (
+      <div className="mt-2">
+        <span className="block mb-1" style={{ fontSize: "8px", color: "#4ade80", letterSpacing: "0.12em" }}>EN GÜÇLÜ ARGÜMAN</span>
+        <p style={{ fontSize: "10px", color: "var(--text-secondary)", fontFamily: "JetBrains Mono, monospace", lineHeight: 1.6 }}>{arg}</p>
+      </div>
+    );
+  }
+
+  if (run.agent === "adversary" && out) {
+    const valid = out.valid_objection;
+    const fatal = typeof out.fatal_objection === "string" ? out.fatal_objection : null;
+    return (
+      <div className="mt-2 flex flex-col gap-2">
+        {valid !== undefined && (
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize: "8px", color: "var(--text-dim)", letterSpacing: "0.12em" }}>GEÇERLİ İTİRAZ</span>
+            <span style={{ fontSize: "9px", color: valid ? "#f87171" : "#4ade80", fontFamily: "JetBrains Mono, monospace" }}>{valid ? "EVET" : "HAYIR"}</span>
+          </div>
+        )}
+        {fatal && (
+          <div>
+            <span className="block mb-1" style={{ fontSize: "8px", color: "#f87171", letterSpacing: "0.12em" }}>ÖLÜMCÜL İTİRAZ</span>
+            <p style={{ fontSize: "10px", color: "#fca5a5", fontFamily: "JetBrains Mono, monospace", lineHeight: 1.6 }}>{fatal}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return null;
 }
 
@@ -658,6 +1124,9 @@ function RunRow({
           {/* Agent name */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
+              {IDEA_AGENT_ICONS[run.agent] && (
+                <span style={{ fontSize: "12px" }}>{IDEA_AGENT_ICONS[run.agent]}</span>
+              )}
               <span
                 style={{
                   fontSize: "11px",
@@ -803,7 +1272,6 @@ function RunRow({
             </div>
           )}
 
-          {/* Output */}
           {outputPreview && !errorText && (
             <div className="mb-3">
               <span
@@ -828,7 +1296,6 @@ function RunRow({
             </div>
           )}
 
-          {/* Error */}
           {errorText && (
             <div>
               <span
@@ -852,6 +1319,8 @@ function RunRow({
               </pre>
             </div>
           )}
+
+          <IdeaRunDetail run={run} />
 
           {/* Empty state */}
           {!inputPreview && !outputPreview && !errorText && !cost && (
@@ -1119,14 +1588,43 @@ export function JobDetailClient({ initialJob, initialRuns, costMap, initialChild
               <div className="w-4" />
             </div>
 
-            {runs.map((run, i) => (
-              <RunRow
-                key={run.id}
-                run={run}
-                cost={costs[run.id]}
-                isLast={i === runs.length - 1}
-              />
-            ))}
+            {/* Debate grouping: advocate+adversary with same iteration → group as "Tartışma Turu N" */}
+            {(() => {
+              const elements: React.ReactNode[] = [];
+              let i = 0;
+              while (i < runs.length) {
+                const run = runs[i]!;
+                const next = runs[i + 1];
+                const isDebatePair =
+                  run.agent === "advocate" &&
+                  next?.agent === "adversary" &&
+                  run.iteration === next.iteration;
+
+                if (isDebatePair) {
+                  elements.push(
+                    <div key={`debate-${i}-${run.id}`}>
+                      <div
+                        className="px-4 py-1.5"
+                        style={{ backgroundColor: "var(--surface-overlay)", borderBottom: "1px solid var(--border)" }}
+                      >
+                        <span className="uppercase tracking-widest" style={{ fontSize: "8px", color: "var(--text-dim)", letterSpacing: "0.14em" }}>
+                          ⚔️ Tartışma Turu {run.iteration}
+                        </span>
+                      </div>
+                      <RunRow run={run} cost={costs[run.id]} isLast={false} />
+                      <RunRow run={next!} cost={costs[next!.id]} isLast={i + 2 === runs.length} />
+                    </div>,
+                  );
+                  i += 2;
+                } else {
+                  elements.push(
+                    <RunRow key={run.id} run={run} cost={costs[run.id]} isLast={i === runs.length - 1} />,
+                  );
+                  i++;
+                }
+              }
+              return elements;
+            })()}
           </div>
         )}
       </div>

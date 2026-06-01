@@ -18,6 +18,12 @@ type JobRow = {
   spec: unknown;
   plan: unknown;
   answers: Record<string, string> | null;
+  prd: string | null;
+  prd_approved: boolean | null;
+  research_output: unknown | null;
+  scaffold_repo: string | null;
+  idea_loop_count: number | null;
+  idea_constraints: unknown | null;
   error: string | null;
   created_at: string;
   updated_at: string;

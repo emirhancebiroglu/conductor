@@ -24,6 +24,11 @@ export const JobStatusSchema = z.enum([
   "merged",
   "failed",
   "needs_human",
+  // idea pipeline statuses
+  "researching",
+  "prd_ready",
+  "scaffolding",
+  "idea_exhausted",
 ]);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 
@@ -272,6 +277,12 @@ export const JobSchema = z.object({
   prUrl: z.string().url().nullable(),
   spec: SpecSchema.nullable(),
   plan: PlanSchema.nullable(),
+  prd: z.string().nullable(),
+  prdApproved: z.boolean(),
+  researchOutput: z.record(z.unknown()).nullable(),
+  scaffoldRepo: z.string().nullable(),
+  ideaLoopCount: z.number().int(),
+  ideaConstraints: z.record(z.unknown()).nullable(),
   error: z.string().nullable(),
   currentAgent: z.string().nullable(),
   currentStepMessage: z.string().nullable(),
@@ -296,6 +307,12 @@ export const JobRowSchema = z.object({
   spec: z.unknown().nullable(),
   plan: z.unknown().nullable(),
   answers: z.record(z.string()).nullable(),
+  prd: z.string().nullable(),
+  prd_approved: z.boolean(),
+  research_output: z.unknown().nullable(),
+  scaffold_repo: z.string().nullable(),
+  idea_loop_count: z.number().int(),
+  idea_constraints: z.unknown().nullable(),
   error: z.string().nullable(),
   current_agent: z.string().nullable(),
   current_step_message: z.string().nullable(),

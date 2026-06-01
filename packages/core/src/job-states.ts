@@ -11,6 +11,10 @@ export const JOB_STATUS = {
   MERGED: "merged",
   FAILED: "failed",
   NEEDS_HUMAN: "needs_human",
+  RESEARCHING: "researching",
+  PRD_READY: "prd_ready",
+  SCAFFOLDING: "scaffolding",
+  IDEA_EXHAUSTED: "idea_exhausted",
 } as const satisfies Record<string, JobStatus>;
 
 export const TERMINAL_STATUSES: ReadonlySet<JobStatus> = new Set([
@@ -18,17 +22,20 @@ export const TERMINAL_STATUSES: ReadonlySet<JobStatus> = new Set([
   JOB_STATUS.MERGED,
   JOB_STATUS.FAILED,
   JOB_STATUS.NEEDS_HUMAN,
+  JOB_STATUS.IDEA_EXHAUSTED,
 ]);
 
 export const ACTIVE_STATUSES: ReadonlySet<JobStatus> = new Set([
   JOB_STATUS.RUNNING,
   JOB_STATUS.REVIEW_LOOP,
   JOB_STATUS.TEST_LOOP,
+  JOB_STATUS.RESEARCHING,
+  JOB_STATUS.SCAFFOLDING,
 ]);
 
 /** Valid transitions in the state machine. */
 export const TRANSITIONS: Readonly<Record<JobStatus, ReadonlyArray<JobStatus>>> = {
-  queued: ["running", "failed"],
+  queued: ["running", "researching", "failed"],
   running: ["waiting_input", "decomposed", "review_loop", "test_loop", "pr_opened", "failed", "needs_human"],
   waiting_input: ["queued", "failed"],
   decomposed: [],
@@ -38,6 +45,10 @@ export const TRANSITIONS: Readonly<Record<JobStatus, ReadonlyArray<JobStatus>>> 
   merged: [],
   failed: [],
   needs_human: ["queued", "failed"],
+  researching: ["prd_ready", "queued", "idea_exhausted", "failed"],
+  prd_ready: ["scaffolding", "researching", "failed"],
+  scaffolding: ["queued", "failed"],
+  idea_exhausted: [],
 };
 
 export function canTransition(from: JobStatus, to: JobStatus): boolean {

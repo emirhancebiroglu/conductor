@@ -60,31 +60,30 @@
 
 ## Faz 5 — Fikir→MVP hattı · DL 2026-07-26
 
-- [ ] **T-501** 'idea' job tipi + DB (prd, prd_approved, research_output, 
-      scaffold_repo alanları + idea_exhausted status) · Est 2 · Dep M4
-- [ ] **T-502** Scout agent + skill (tema opsiyonel → kendi 3 alan seçer,
-      PH/Reddit/HN/Trends web araştırması, fikir üretimi, 5 boyut skoru,
-      top 5 listesi) · Est 5 · Dep T-501
-- [ ] **T-503** Executioner agent + skill (kill test, her fikre 3 ölüm 
-      senaryosu, 2-3 hayatta kalan + "neden öldü" raporu) · Est 3 · Dep T-502
-- [ ] **T-504** Advocate agent + skill (Claude premium, fikrin en iyi 
-      versiyonu, top %1 execution planı) · Est 3 · Dep T-503
-- [ ] **T-505** Adversary agent + skill (Go model cheap, yapısal itiraz 
-      zorunlu, kanıtsız itiraz geçersiz, sycophancy önleme) · Est 3 · Dep T-503
-- [ ] **T-506** Judge agent + skill (PASS/MODIFY/DEADLOCK state machine,
-      her iki argümanı değerlendirir, bağlayıcı karar) · Est 4 · Dep T-504,T-505
-- [ ] **T-507** Idea orchestrator: debate loop (max 3), idea_exhausted 
-      + neden özeti, DEADLOCK→Scout kısıtlarla, MODIFY→debate tekrar · Est 5 · Dep T-506
-- [ ] **T-508** 'idea' job tipi dashboard form (tema opsiyonel, hedef kitle, 
-      problem alanı) + navigasyon butonu · Est 2 · Dep T-501
-- [ ] **T-509** Product Manager agent + skill (PRD üretimi, waiting PRD 
-      onayı için dashboard review UI + onayla/düzenle/iptal) · Est 4 · Dep T-507
-- [ ] **T-510** Scaffolder agent + skill (repo scaffold, feature listesi 
-      jobs'a queue) + parent job decomposed · Est 4 · Dep T-509
-- [ ] **T-511** Idea job timeline UI (Scout/Exec/Advocate/Adversary/Judge 
-      adımları, paralel araştırma badge'i, PRD preview) · Est 3 · Dep T-508
-- [ ] **M5** ✅ Fikir/tema → araştırma → kill test → tartışma → Judge PASS 
-      → PRD onayı → scaffold → feature queue · Dep T-510,T-511
+- [x] **T-501a** agent_config + categories altyapısı (migration 005/006) ✅
+- [x] **T-501b** 7 idea pipeline agent'ı dashboard'dan oluşturuldu ✅
+- [ ] **T-501c** jobs tablosuna idea alanları ekle: prd text, prd_approved bool,
+      research_output jsonb, scaffold_repo text + yeni statuslar:
+      'researching'|'prd_ready'|'scaffolding'|'idea_exhausted' · Est 1 · Dep —
+- [ ] **T-502** Agent wrapper dosyaları (apps/worker/src/agents/idea/):
+      scout.ts, executioner.ts, advocate.ts, adversary.ts, judge.ts,
+      productManager.ts, scaffolder.ts — getAgentConfig() + prompt build + zod validate
+      · Est 5 · Dep T-501c
+- [ ] **T-503** ideaOrchestrator.ts: Scout→Exec→Advocate+Adversary→Judge döngüsü,
+      max 3 loop, MODIFY→debate tekrar, DEADLOCK→Scout kısıtlarla,
+      idea_exhausted + özet raporu · Est 6 · Dep T-502
+- [ ] **T-504** processJob.ts güncelle: type='idea' → ideaOrchestrator,
+      type='feature' → mevcut runPipeline · Est 1 · Dep T-503
+- [ ] **T-505** Dashboard: /dashboard/ideas/new form (tema opsiyonel,
+      hedef kitle, problem alanı) + navigasyon · Est 2 · Dep T-501c
+- [ ] **T-506** Dashboard: PRD review UI — markdown render, onayla/düzenle/iptal,
+      /api/jobs/[id]/approve-prd route · Est 3 · Dep T-503
+- [ ] **T-507** Dashboard: idea job timeline UI (Scout/Exec/Advocate+Adversary/Judge
+      adımları, PASS/MODIFY/DEADLOCK badge, debate özeti) + Realtime · Est 3 · Dep T-504
+- [ ] **T-508** createIdeaFeatureJobs: PRD onayı sonrası feature'ları
+      jobs tablosuna queue et, parent job 'decomposed' · Est 2 · Dep T-503
+- [ ] **M5** ✅ Fikir/tema → araştırma → kill test → tartışma → Judge PASS
+      → PRD onayı → feature queue · Dep T-507,T-508
 
 ## Faz 6 — Hardening + dogfood · DL 2026-08-02
 - [ ] **T-601** Retry/timeout/kill-switch sağlamlaştır · Est 3 · Dep M4

@@ -1,5 +1,6 @@
 import { cloneAndBranch, cleanup } from "./git.js";
 import { runPipeline } from "./orchestrator.js";
+import { runIdeaPipeline, runScaffoldPhase } from "./ideaOrchestrator.js";
 import { invalidateConfigCache } from "./agentConfig.js";
 
 // why: supabase any client passed through — typed at call site
@@ -14,6 +15,11 @@ export type Job = {
   type: string;
   lane_preference: string;
   answers?: Record<string, string> | null;
+  idea_loop_count?: number | null;
+  idea_constraints?: unknown | null;
+  research_output?: unknown | null;
+  prd?: string | null;
+  prd_approved?: boolean | null;
 };
 
 function requireEnv(key: string): string {
@@ -32,9 +38,40 @@ async function updateJob(
 }
 
 export async function processJob(supabase: SupabaseAny, job: Job): Promise<void> {
-  const token = requireEnv("CONDUCTOR_GITHUB_TOKEN");
-
   invalidateConfigCache();
+
+  // ── Idea pipeline: no repo clone needed ────────────────────────────────────
+  if (job.type === "idea") {
+    if (job.prd_approved === true) {
+      // PRD human-approved → scaffold phase
+      try {
+        await updateJob(supabase, job.id, { status: "scaffolding", started_at: new Date().toISOString() });
+        await runScaffoldPhase(supabase, job);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[worker] scaffold job ${job.id} unhandled error: ${msg}`);
+        await updateJob(supabase, job.id, { status: "failed", error: msg }).catch(() => {});
+      } finally {
+        await updateJob(supabase, job.id, { current_agent: null, current_step_message: null }).catch(() => {});
+      }
+    } else {
+      // Research + debate + PRD generation
+      try {
+        await updateJob(supabase, job.id, { status: "researching", started_at: new Date().toISOString() });
+        await runIdeaPipeline(supabase, job);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[worker] idea job ${job.id} unhandled error: ${msg}`);
+        await updateJob(supabase, job.id, { status: "failed", error: msg }).catch(() => {});
+      } finally {
+        await updateJob(supabase, job.id, { current_agent: null, current_step_message: null }).catch(() => {});
+      }
+    }
+    return;
+  }
+
+  // ── Feature pipeline: requires repo clone ──────────────────────────────────
+  const token = requireEnv("CONDUCTOR_GITHUB_TOKEN");
 
   const { data: project } = await supabase
     .from("projects")
@@ -68,7 +105,7 @@ export async function processJob(supabase: SupabaseAny, job: Job): Promise<void>
     console.error(`[worker] job ${job.id} unhandled error: ${msg}`);
     await updateJob(supabase, job.id, { status: "failed", error: msg }).catch(() => {});
   } finally {
-    await updateJob(supabase, job.id, { current_agent: null, current_step_message: null }).catch(() => { });
+    await updateJob(supabase, job.id, { current_agent: null, current_step_message: null }).catch(() => {});
     if (repoDir) cleanup(repoDir);
   }
 }

@@ -1,5 +1,6 @@
-import { spawn } from "node:child_process";
+﻿import { spawn } from "node:child_process";
 import { accessSync } from "node:fs";
+import { dirname } from "node:path";
 import type { ZodType } from "zod";
 import { logUsage } from "./usage.js";
 import type { AgentConfig } from "./agentConfig.js";
@@ -37,7 +38,9 @@ const PREMIUM_MODEL = "claude-sonnet-4-6";
 const CHEAP_MODEL = "opencode-go/deepseek-v4-flash";
 
 function claudeBin(): string {
-  return process.env["CLAUDE_PATH"] ?? "claude";
+  const p = process.env["CLAUDE_PATH"] ?? "claude";
+  console.log(`[runner] claudeBin: CLAUDE_PATH=${p}`);
+  return p;
 }
 
 // On Windows, opencode ships as a .cmd/.ps1 shim — not spawnable with shell:false.
@@ -48,20 +51,27 @@ function claudeBin(): string {
 //   4. bare "opencode" — works on Linux/macOS where it is a real binary
 function opencodeArgs(): { bin: string; prefix: string[] } {
   const envPath = process.env["OPENCODE_PATH"];
+  console.log(`[runner] opencodeArgs: OPENCODE_PATH=${envPath ?? "(unset)"}`);
   if (envPath) return { bin: envPath, prefix: [] };
 
   // Try to find the JS entrypoint next to the node binary
   const nodeBin = process.execPath; // e.g. C:\nvm4w\nodejs\node.exe
-  const nodeDir = nodeBin.replace(/[/\\][^/\\]+$/, ""); // parent dir
+  const nodeDir = dirname(nodeBin); // parent dir — dirname handles both / and \ on Windows
   const jsEntry = `${nodeDir}/node_modules/opencode-ai/bin/opencode`;
 
   try {
     accessSync(jsEntry);
     return { bin: nodeBin, prefix: [jsEntry] };
   } catch {
-    // On Windows, use cmd.exe /c so the .cmd shim on PATH resolves correctly
     if (process.platform === "win32") {
-      return { bin: "cmd.exe", prefix: ["/c", "opencode"] };
+      // On Windows, prefer the .cmd shim which resolves to opencode.exe correctly
+      const cmdShim = `${nodeDir}/opencode.cmd`;
+      try {
+        accessSync(cmdShim);
+        // cmd.exe full path required — shell:false means no PATH resolution
+        return { bin: "C:\\Windows\\System32\\cmd.exe", prefix: ["/c", cmdShim] };
+      } catch { /* noop */ }
+      return { bin: "C:\\Windows\\System32\\cmd.exe", prefix: ["/c", "opencode"] };
     }
     return { bin: "opencode", prefix: [] };
   }
@@ -112,14 +122,23 @@ function spawnAgent(
       "run",
       "--dangerously-skip-permissions",
       "-m", resolvedCheapModel,
-      "--variant", "max",
     ];
   }
 
   return new Promise((resolve) => {
+    // Ensure Windows user profile env vars are present — some spawn contexts (cmd.exe /c pnpm)
+    // strip them, breaking Claude Code auth (reads ~/.claude/.credentials.json via HOME)
+    const spawnEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (process.platform === "win32") {
+      const home = process.env["USERPROFILE"] ?? process.env["HOME"] ?? `C:\\Users\\${process.env["USERNAME"] ?? ""}`;
+      spawnEnv["USERPROFILE"] = spawnEnv["USERPROFILE"] ?? home;
+      spawnEnv["HOME"] = spawnEnv["HOME"] ?? home;
+      spawnEnv["APPDATA"] = spawnEnv["APPDATA"] ?? `${home}\\AppData\\Roaming`;
+      spawnEnv["LOCALAPPDATA"] = spawnEnv["LOCALAPPDATA"] ?? `${home}\\AppData\\Local`;
+    }
     const child = spawn(bin, args, {
       cwd: repoDir,
-      env: process.env,
+      env: spawnEnv,
       shell: false,
     });
     // Write prompt to stdin — avoids CLI parsing issues with prompts that
@@ -167,6 +186,7 @@ function spawnAgent(
       if (code === 0) {
         resolve({ success: true, output: stdoutFull });
       } else {
+        if (stderrFull) console.warn(`[runner] agent stderr (${bin}): ${stderrFull.slice(0, 500)}`);
         resolve({ success: false, error: stderrFull || `agent exited with code ${code}` });
       }
     });
@@ -175,6 +195,7 @@ function spawnAgent(
       clearTimeout(timer);
       if (settled) return;
       settled = true;
+      console.warn(`[runner] spawn error (bin=${bin}): ${err.message}`);
       resolve({ success: false, error: err.message });
     });
   });
@@ -220,30 +241,19 @@ const JSON_SUFFIX =
   "\n\nÖNEMLİ: Sadece geçerli JSON döndür. Markdown yok, açıklama yok. Başka hiçbir metin ekleme. String değerlerde ASLA \\ kullanma, Türkçe karakterleri doğrudan yaz.";
 
 function extractJson(raw: string): string {
-  // Strip markdown code fences if agent wrapped JSON in ```json ... ```
+  // Strip ANSI escape sequences from terminal output
+  // eslint-disable-next-line no-control-regex
+  raw = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/\x1b./g, "");
+  // Strip markdown code fences
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) return fenced[1]!.trim();
-  // Find first { or [ and return from there
+  if (fenced) return (fenced[1] ?? "").trim();
   const start = raw.search(/[{[]/);
   if (start !== -1) return raw.slice(start).trim();
   return raw.trim();
 }
 
 function sanitizeJson(raw: string): string {
-  // Geçersiz kaçış karakterlerini temizle: \' → ', \` → `
-  raw = raw.replace(/\\(['`])/g, '$1');
-
-  // String içindeki kontrol karakterlerini düzelt
-  // eslint-disable-next-line no-control-regex
-  raw = raw.replace(/[\u0000-\u001f]/g, (c) => {
-    const map: Record<string, string> = {
-      '\b': '\\b', '\f': '\\f', '\n': '\\n',
-      '\r': '\\r', '\t': '\\t',
-    };
-    return map[c] || `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`;
-  });
-
-  return raw;
+  return raw.replace(/\\(['`])/g, "$1");
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +324,7 @@ export async function runAgentForJSON<T>(
 
     const raw = extractJson(result.output);
     const sanitized = sanitizeJson(raw);
+    console.warn(`[runner] ${agentName} raw output (first 400): ${result.output.slice(0, 400)}`);
 
     try {
       const parsed = JSON.parse(sanitized) as unknown;

@@ -96,6 +96,36 @@ const STATUS_META: Record<JobStatus, StatusMeta> = {
     dot: "#fbbf24",
     pulse: true,
   },
+  researching: {
+    label: "RESEARCHING",
+    color: "#38bdf8",
+    bg: "rgba(56,189,248,0.08)",
+    border: "rgba(56,189,248,0.25)",
+    dot: "#38bdf8",
+    pulse: true,
+  },
+  prd_ready: {
+    label: "PRD READY",
+    color: "#4ade80",
+    bg: "rgba(74,222,128,0.08)",
+    border: "rgba(74,222,128,0.25)",
+    dot: "#4ade80",
+  },
+  scaffolding: {
+    label: "SCAFFOLDING",
+    color: "#c084fc",
+    bg: "rgba(192,132,252,0.08)",
+    border: "rgba(192,132,252,0.25)",
+    dot: "#c084fc",
+    pulse: true,
+  },
+  idea_exhausted: {
+    label: "EXHAUSTED",
+    color: "#94a3b8",
+    bg: "rgba(148,163,184,0.08)",
+    border: "rgba(148,163,184,0.25)",
+    dot: "#94a3b8",
+  },
 };
 
 function formatRelative(iso: string): string {

@@ -213,13 +213,38 @@ export function Sidebar() {
         </span>
       </div>
 
-      {/* New Feature CTA */}
-      <div className="px-3 pt-4 pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
+      {/* CTA buttons */}
+      <div className="px-3 pt-4 pb-3 flex flex-col gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
         <Link href="/dashboard/jobs/new" className="new-feature-btn">
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
             <path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" />
           </svg>
           NEW FEATURE
+        </Link>
+        <Link
+          href="/dashboard/ideas/new"
+          className="flex items-center justify-center gap-2 w-full px-3 py-2 text-xs uppercase tracking-widest transition-all"
+          style={{
+            fontFamily: "Syne, sans-serif",
+            letterSpacing: "0.1em",
+            fontSize: "9px",
+            color: "rgba(56,189,248,0.8)",
+            backgroundColor: "rgba(56,189,248,0.06)",
+            border: "1px solid rgba(56,189,248,0.2)",
+            textDecoration: "none",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(56,189,248,0.12)";
+            e.currentTarget.style.borderColor = "rgba(56,189,248,0.4)";
+            e.currentTarget.style.color = "#38bdf8";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(56,189,248,0.06)";
+            e.currentTarget.style.borderColor = "rgba(56,189,248,0.2)";
+            e.currentTarget.style.color = "rgba(56,189,248,0.8)";
+          }}
+        >
+          💡 YENİ FİKİR
         </Link>
       </div>
 
