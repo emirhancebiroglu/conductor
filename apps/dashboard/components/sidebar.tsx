@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getAgentsDirty, requestNavigation } from "@/lib/agents-dirty-state";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 
 type WorkerStatus = "online" | "paused_limit" | "paused_manual";
 
@@ -211,6 +212,11 @@ export function Sidebar() {
         >
           CONDUCTOR
         </span>
+      </div>
+
+      {/* Workspace switcher */}
+      <div className="px-3 pt-3 pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
+        <WorkspaceSwitcher />
       </div>
 
       {/* CTA buttons */}

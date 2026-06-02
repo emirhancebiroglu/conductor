@@ -45,7 +45,8 @@ dbDescribe("Migration 005: agent_config table structure", () => {
       "provider",
       "model",
       "system_prompt",
-      "skill_path",
+      "skill_content",
+      "category_id",
       "enabled",
       "lane_override",
       "order",
@@ -90,8 +91,8 @@ dbDescribe("Migration 005: agent_config table structure", () => {
     expect((sampleRow!.system_prompt as string).length).toBeGreaterThan(0);
   });
 
-  it("skill_path is text or null", () => {
-    const val = sampleRow!.skill_path;
+  it("skill_content is text or null", () => {
+    const val = sampleRow!.skill_content;
     expect(val === null || typeof val === "string").toBe(true);
   });
 
@@ -244,17 +245,17 @@ dbDescribe("Migration 005: agent_name CHECK constraint", () => {
     }
   });
 
-  it("rejects invalid agent name via CHECK constraint (error 23514)", async () => {
+  it("rejects duplicate agent name via UNIQUE constraint", async () => {
     const { error } = await admin!
       .from("agent_config")
       .insert({
-        agent_name: "invalid-agent-name",
-        display_name: "Invalid",
+        agent_name: "product-owner",
+        display_name: "Duplicate",
         role: "Should fail",
         system_prompt: "test",
       } as never);
 
-    expect(error?.code).toBe("23514");
+    expect(error?.code).toBe("23505");
   });
 });
 
@@ -363,28 +364,33 @@ dbDescribe("Migration 005: seed data — provider_models", () => {
 // ---------------------------------------------------------------------------
 
 dbDescribe("Migration 005: seed data — agent_config", () => {
-  it("has exactly 8 seed rows", async () => {
+  it("original 8 agents exist (may have more added later)", async () => {
     const { data, error } = await admin!
       .from("agent_config")
-      .select("id");
+      .select("agent_name");
 
     expect(error).toBeNull();
-    expect(data).toHaveLength(8);
+    const names = new Set((data as { agent_name: string }[]).map((r) => r.agent_name));
+    for (const name of VALID_AGENT_NAMES) {
+      expect(names.has(name)).toBe(true);
+    }
   });
 
-  it("each agent_config has correct order values 1-8", async () => {
+  it("each seed agent has correct order values 1-8", async () => {
     const { data } = await admin!
       .from("agent_config")
       .select("agent_name, order")
-      .order("order");
+      .in("agent_name", VALID_AGENT_NAMES as unknown as string[])
+      .order("agent_name");
 
-    const rows = data as { agent_name: string; order: number }[];
+    const rows = (data as { agent_name: string; order: number }[]).sort(
+      (a, b) => VALID_AGENT_NAMES.indexOf(a.agent_name as typeof VALID_AGENT_NAMES[number]) - VALID_AGENT_NAMES.indexOf(b.agent_name as typeof VALID_AGENT_NAMES[number]),
+    );
     expect(rows).toHaveLength(8);
 
     for (let i = 0; i < 8; i++) {
-      const row = rows[i]!;
-      expect(row.order).toBe(i + 1);
-      expect(row.agent_name).toBe(VALID_AGENT_NAMES[i]);
+      expect(rows[i]!.agent_name).toBe(VALID_AGENT_NAMES[i]);
+      expect(rows[i]!.order).toBe(i + 1);
     }
   });
 

@@ -1,13 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
+import { getActiveWorkspaceKind, resolveWorkspaceId } from "@/lib/workspace";
 import { ProjectsClient } from "./projects-client";
 import type { ProjectRow } from "@conductor/core";
 
 export default async function ProjectsPage() {
   const supabase = await createClient();
 
+  const kind = await getActiveWorkspaceKind();
+  const workspaceId = await resolveWorkspaceId(supabase, kind);
+
   const { data: connected, error } = await supabase
     .from("projects")
     .select("*")
+    .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false });
 
   const connectedProjects: ProjectRow[] = (connected ?? []) as ProjectRow[];

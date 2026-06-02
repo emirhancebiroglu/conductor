@@ -10,6 +10,7 @@ type SupabaseAny = any;
 export type Job = {
   id: string;
   project_id: string;
+  workspace_id?: string | null;
   title: string;
   description: string;
   type: string;
@@ -39,6 +40,7 @@ async function updateJob(
 
 export async function processJob(supabase: SupabaseAny, job: Job): Promise<void> {
   invalidateConfigCache();
+  console.log(`[worker] processing job ${job.id} type=${job.type} workspace=${job.workspace_id ?? "unset"}`);
 
   // ── Idea pipeline: no repo clone needed ────────────────────────────────────
   if (job.type === "idea") {

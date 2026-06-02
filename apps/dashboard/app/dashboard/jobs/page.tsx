@@ -1,14 +1,59 @@
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { getActiveWorkspaceKind, resolveWorkspaceId } from "@/lib/workspace";
 import { JobsClient } from "./jobs-client";
 import type { JobRow, ProjectRow } from "@conductor/core";
 
 export const dynamic = "force-dynamic";
 
-export default async function JobsPage() {
+// ---------------------------------------------------------------------------
+// E2E fixture data (never used in production)
+// ---------------------------------------------------------------------------
+const FIXTURE_WORKSPACE_ID = "aaaaaaaa-0000-0000-0000-000000000001";
+const FIXTURE_WORK_JOB: JobRow = {
+  id: "dddddddd-0000-0000-0000-000000000001",
+  project_id: "bbbbbbbb-0000-0000-0000-000000000001",
+  parent_job_id: null,
+  workspace_id: FIXTURE_WORKSPACE_ID,
+  type: "feature", title: "Work Feature Alpha",
+  description: "A work feature", lane_preference: "auto", status: "queued",
+  branch: null, pr_url: null, spec: null, plan: null, answers: null,
+  prd: null, prd_approved: false, research_output: null, scaffold_repo: null,
+  idea_loop_count: 0, idea_constraints: null, error: null,
+  current_agent: null, current_step_message: null, started_at: null,
+  created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+};
+const FIXTURE_PERSONAL_JOB: JobRow = {
+  ...FIXTURE_WORK_JOB,
+  id: "dddddddd-0000-0000-0000-000000000002",
+  workspace_id: "aaaaaaaa-0000-0000-0000-000000000002",
+  title: "Personal Side Project",
+};
+
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | undefined>>;
+}) {
+  // E2E fixture bypass — never active in production
+  if (process.env["NODE_ENV"] !== "production") {
+    const hdrs = await headers();
+    const fixture = hdrs.get("x-fixture") ?? (await searchParams ?? {}).__fixture;
+    if (fixture === "workspace_work") {
+      return <JobsClient initialJobs={[FIXTURE_WORK_JOB]} projectMap={{}} costByJob={{}} workspaceId={FIXTURE_WORKSPACE_ID} />;
+    }
+    if (fixture === "workspace_personal") {
+      return <JobsClient initialJobs={[FIXTURE_PERSONAL_JOB]} projectMap={{}} costByJob={{}} workspaceId="aaaaaaaa-0000-0000-0000-000000000002" />;
+    }
+  }
+
   const supabase = await createClient();
 
+  const kind = await getActiveWorkspaceKind();
+  const workspaceId = await resolveWorkspaceId(supabase, kind);
+
   const [{ data: jobs }, { data: projectsRaw }] = await Promise.all([
-    supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+    supabase.from("jobs").select("*").eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
     supabase.from("projects").select("id, owner, repo"),
   ]);
 
@@ -56,6 +101,7 @@ export default async function JobsPage() {
       initialJobs={jobList}
       projectMap={Object.fromEntries(projectMap)}
       costByJob={costByJob}
+      workspaceId={workspaceId}
     />
   );
 }

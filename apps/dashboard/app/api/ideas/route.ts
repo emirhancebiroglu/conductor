@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getActiveWorkspaceKind, resolveWorkspaceId } from "@/lib/workspace";
 
 const CreateIdeaSchema = z.object({
   theme: z.string().trim().optional(),
@@ -42,6 +43,9 @@ export async function POST(request: NextRequest) {
   // Title: first 80 chars of description
   const title = description.slice(0, 80) + (description.length > 80 ? "…" : "");
 
+  const kind = await getActiveWorkspaceKind();
+  const workspaceId = await resolveWorkspaceId(supabase, kind);
+
   // idea jobs don't require a project — project_id nullable per migration
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.from("jobs") as any)
@@ -52,6 +56,7 @@ export async function POST(request: NextRequest) {
       lane_preference: "auto",
       status: "queued",
       idea_constraints: theme ? { theme } : null,
+      workspace_id: workspaceId,
     })
     .select()
     .single();

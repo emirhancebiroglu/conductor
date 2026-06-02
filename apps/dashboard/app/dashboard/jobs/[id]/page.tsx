@@ -14,6 +14,7 @@ const FIXTURE_WAITING_JOB: JobRow = {
   id: FIXTURE_JOB_ID,
   project_id: "00000000-0000-0000-0000-000000000001",
   parent_job_id: null,
+  workspace_id: "00000000-0000-0000-0000-000000000000",
   type: "feature",
   title: "Login ekle",
   description: "Kullanıcıların sisteme giriş yapabilmesini istiyorum.",

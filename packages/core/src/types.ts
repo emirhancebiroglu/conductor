@@ -63,6 +63,32 @@ export const ApprovalStatusSchema = z.enum(["pending", "approved", "rejected"]);
 export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
 
 // ---------------------------------------------------------------------------
+// Workspace enums / schemas
+// ---------------------------------------------------------------------------
+
+export const WorkspaceKindSchema = z.enum(["work", "personal"]);
+export type WorkspaceKind = z.infer<typeof WorkspaceKindSchema>;
+
+export const WorkspaceSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  kind: WorkspaceKindSchema,
+  settings: z.record(z.unknown()),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type Workspace = z.infer<typeof WorkspaceSchema>;
+
+/** Raw DB row (snake_case) */
+export const WorkspaceRowSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  kind: WorkspaceKindSchema,
+  settings: z.unknown(),
+  created_at: z.string(),
+});
+export type WorkspaceRow = z.infer<typeof WorkspaceRowSchema>;
+
+// ---------------------------------------------------------------------------
 // Embedded JSON column shapes (spec / plan inside jobs)
 // ---------------------------------------------------------------------------
 
@@ -246,6 +272,7 @@ export const ProjectSchema = z.object({
   owner: z.string(),
   repo: z.string(),
   defaultBranch: z.string(),
+  workspaceId: z.string().uuid(),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type Project = z.infer<typeof ProjectSchema>;
@@ -256,6 +283,7 @@ export const ProjectRowSchema = z.object({
   owner: z.string(),
   repo: z.string(),
   default_branch: z.string(),
+  workspace_id: z.string().uuid(),
   created_at: z.string(),
 });
 export type ProjectRow = z.infer<typeof ProjectRowSchema>;
@@ -268,6 +296,7 @@ export const JobSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   parentJobId: z.string().uuid().nullable(),
+  workspaceId: z.string().uuid(),
   type: JobTypeSchema,
   title: z.string().min(1),
   description: z.string().min(1),
@@ -297,6 +326,7 @@ export const JobRowSchema = z.object({
   id: z.string().uuid(),
   project_id: z.string().uuid(),
   parent_job_id: z.string().uuid().nullable(),
+  workspace_id: z.string().uuid(),
   type: JobTypeSchema,
   title: z.string(),
   description: z.string(),
@@ -328,6 +358,7 @@ export const CreateJobSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().min(1).max(2000),
   lanePreference: LanePreferenceSchema.default("auto"),
+  workspaceId: z.string().uuid().optional(),
 });
 export type CreateJob = z.infer<typeof CreateJobSchema>;
 

@@ -3,8 +3,12 @@ import {
   AgentConfigSchema,
   AgentNameSchema,
   ProviderModelSchema,
+  ProjectSchema,
+  ProjectRowSchema,
   JobSchema,
   JobRowSchema,
+  WorkspaceSchema,
+  WorkspaceRowSchema,
   LaneSchema,
 } from "../types";
 
@@ -54,9 +58,10 @@ describe("AgentConfigSchema", () => {
     provider: "claude",
     model: "claude-sonnet-4-6",
     systemPrompt: "You are the product owner...",
-    skillPath: "skills/product-owner/SKILL.md",
+    skillContent: "skills/product-owner/SKILL.md",
+    categoryId: null,
     enabled: true,
-    laneOverride: null as "cheap" | "premium" | null,
+    laneOverride: null,
     order: 1,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -84,8 +89,8 @@ describe("AgentConfigSchema", () => {
     }
   });
 
-  it("rejects invalid agentName", () => {
-    const result = AgentConfigSchema.safeParse({ ...validConfig, agentName: "invalid-agent" });
+  it("rejects invalid agentName with uppercase", () => {
+    const result = AgentConfigSchema.safeParse({ ...validConfig, agentName: "INVALID" });
     expect(result.success).toBe(false);
   });
 
@@ -159,13 +164,13 @@ describe("AgentConfigSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts skillPath as null", () => {
-    const result = AgentConfigSchema.safeParse({ ...validConfig, skillPath: null });
+  it("accepts skillContent as null", () => {
+    const result = AgentConfigSchema.safeParse({ ...validConfig, skillContent: null });
     expect(result.success).toBe(true);
   });
 
-  it("accepts skillPath as string", () => {
-    const result = AgentConfigSchema.safeParse({ ...validConfig, skillPath: "skills/foo/SKILL.md" });
+  it("accepts skillContent as string", () => {
+    const result = AgentConfigSchema.safeParse({ ...validConfig, skillContent: "skills/foo/SKILL.md" });
     expect(result.success).toBe(true);
   });
 
@@ -341,14 +346,134 @@ describe("LaneSchema", () => {
 });
 
 // ---------------------------------------------------------------------------
-// JobSchema update — currentAgent / currentStepMessage
+// WorkspaceSchema
 // ---------------------------------------------------------------------------
 
-describe("JobSchema — currentAgent / currentStepMessage", () => {
+describe("WorkspaceSchema", () => {
+  const valid = {
+    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    name: "Personal",
+    kind: "personal" as const,
+    settings: {},
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+
+  it("parses valid workspace", () => {
+    const result = WorkspaceSchema.safeParse(valid);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts kind 'work'", () => {
+    const result = WorkspaceSchema.safeParse({ ...valid, kind: "work" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects invalid kind", () => {
+    const result = WorkspaceSchema.safeParse({ ...valid, kind: "corporate" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects missing name", () => {
+    const { name, ...rest } = valid;
+    const result = WorkspaceSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects missing id", () => {
+    const { id, ...rest } = valid;
+    const result = WorkspaceSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WorkspaceRowSchema
+// ---------------------------------------------------------------------------
+
+describe("WorkspaceRowSchema", () => {
+  const validRow = {
+    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    name: "Personal",
+    kind: "personal" as const,
+    settings: {},
+    created_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("parses valid snake_case row", () => {
+    const result = WorkspaceRowSchema.safeParse(validRow);
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing created_at", () => {
+    const { created_at: _, ...withoutCreatedAt } = validRow;
+    const result = WorkspaceRowSchema.safeParse(withoutCreatedAt);
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts settings as jsonb string", () => {
+    const result = WorkspaceRowSchema.safeParse({ ...validRow, settings: "{}" });
+    expect(result.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ProjectSchema — workspaceId
+// ---------------------------------------------------------------------------
+
+describe("ProjectSchema — workspaceId", () => {
+  const baseProject = {
+    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    owner: "test-user",
+    repo: "test-repo",
+    defaultBranch: "main",
+    createdAt: "2026-01-01T00:00:00Z",
+  };
+
+  it("parses with workspaceId", () => {
+    const result = ProjectSchema.safeParse({ ...baseProject, workspaceId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing workspaceId", () => {
+    const result = ProjectSchema.safeParse(baseProject);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ProjectRowSchema — workspace_id
+// ---------------------------------------------------------------------------
+
+describe("ProjectRowSchema — workspace_id", () => {
+  const baseRow = {
+    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    owner: "test-user",
+    repo: "test-repo",
+    default_branch: "main",
+    created_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("parses with workspace_id", () => {
+    const result = ProjectRowSchema.safeParse({ ...baseRow, workspace_id: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing workspace_id", () => {
+    const result = ProjectRowSchema.safeParse(baseRow);
+    expect(result.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JobSchema — currentAgent / currentStepMessage / workspaceId
+// ---------------------------------------------------------------------------
+
+describe("JobSchema — currentAgent / currentStepMessage / workspaceId", () => {
   const baseJob = {
     id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     projectId: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
     parentJobId: null as string | null,
+    workspaceId: "cccccccc-dddd-eeee-ffff-000000000000",
     type: "feature" as const,
     title: "Test Job",
     description: "A test job",
@@ -358,6 +483,12 @@ describe("JobSchema — currentAgent / currentStepMessage", () => {
     prUrl: null as string | null,
     spec: null,
     plan: null,
+    prd: null,
+    prdApproved: false,
+    researchOutput: null,
+    scaffoldRepo: null,
+    ideaLoopCount: 0,
+    ideaConstraints: null,
     error: null,
     currentAgent: null as string | null,
     currentStepMessage: null as string | null,
@@ -395,17 +526,32 @@ describe("JobSchema — currentAgent / currentStepMessage", () => {
       expect(result.data.lanePreference).toBe("auto");
     }
   });
+
+  it("rejects missing workspaceId", () => {
+    const { workspaceId, ...rest } = baseJob;
+    const result = JobSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts workspaceId as valid uuid", () => {
+    const result = JobSchema.safeParse(baseJob);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.workspaceId).toBe("cccccccc-dddd-eeee-ffff-000000000000");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
 // JobRowSchema update — current_agent / current_step_message
 // ---------------------------------------------------------------------------
 
-describe("JobRowSchema — current_agent / current_step_message", () => {
+describe("JobRowSchema — current_agent / current_step_message / workspace_id", () => {
   const baseRow = {
     id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     project_id: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
     parent_job_id: null as string | null,
+    workspace_id: "cccccccc-dddd-eeee-ffff-000000000000",
     type: "feature" as const,
     title: "Test Job",
     description: "A test job",
@@ -416,6 +562,12 @@ describe("JobRowSchema — current_agent / current_step_message", () => {
     spec: null,
     plan: null,
     answers: null,
+    prd: null,
+    prd_approved: false,
+    research_output: null,
+    scaffold_repo: null,
+    idea_loop_count: 0,
+    idea_constraints: null,
     error: null,
     current_agent: null as string | null,
     current_step_message: null as string | null,
@@ -450,6 +602,20 @@ describe("JobRowSchema — current_agent / current_step_message", () => {
     if (result.success) {
       expect(result.data.title).toBe("Test Job");
       expect(result.data.status).toBe("queued");
+    }
+  });
+
+  it("rejects missing workspace_id", () => {
+    const { workspace_id, ...rest } = baseRow;
+    const result = JobRowSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts workspace_id as valid uuid", () => {
+    const result = JobRowSchema.safeParse(baseRow);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.workspace_id).toBe("cccccccc-dddd-eeee-ffff-000000000000");
     }
   });
 });

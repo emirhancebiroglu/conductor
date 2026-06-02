@@ -9,6 +9,7 @@ interface Props {
   initialJobs: JobRow[];
   projectMap: Record<string, { owner: string; repo: string }>;
   costByJob: Record<string, number>;
+  workspaceId: string;
 }
 
 type StatusMeta = {
@@ -166,16 +167,20 @@ function StatusBadge({ status }: { status: JobStatus }) {
   );
 }
 
-export function JobsClient({ initialJobs, projectMap, costByJob }: Props) {
+export function JobsClient({ initialJobs, projectMap, costByJob, workspaceId }: Props) {
   const [jobs, setJobs] = useState<JobRow[]>(initialJobs);
+
+  useEffect(() => {
+    setJobs(initialJobs);
+  }, [initialJobs]);
 
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel("jobs-list")
+      .channel(`jobs-list-${workspaceId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "jobs" },
+        { event: "*", schema: "public", table: "jobs", filter: `workspace_id=eq.${workspaceId}` },
         (payload) => {
           if (payload.eventType === "INSERT") {
             setJobs((prev) => [payload.new as JobRow, ...prev]);
@@ -197,7 +202,7 @@ export function JobsClient({ initialJobs, projectMap, costByJob }: Props) {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [workspaceId]);
 
   return (
     <div>

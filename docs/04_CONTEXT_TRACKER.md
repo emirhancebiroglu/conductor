@@ -3,8 +3,7 @@
 > **Bu dosya canlıdır.** Agent'lar ve sen, "nerede kaldık" sorusunun cevabını buradan okur — sohbet geçmişine güvenme. Her oturum başı oku, her oturum sonu güncelle. Eskiyen satırı sil.
 
 ## Şu an
-- Faz 5 — Fikir→MVP hattı · DL 2026-07-26
-- Aktif görev: T-501
+- Workspace split (work/personal) — T-502 PR bekliyor
 - Son milestone: M4 ✅
 
 ## 📌 Bu hafta (Pazartesi'de doldur)
@@ -22,6 +21,7 @@
 | 2026-05-30 | Kuyruk v1 = Supabase tablo poll/Realtime | Sıfır ekstra altyapı | BullMQ+Redis (ölçekte) |
 | 2026-05-30 | Ucuz şerit OpenCode Go, premium Claude Code | Sabit maliyet + en iyi kodlama | Tek model her şeye |
 | 2026-05-30 | Main'e otomatik merge YOK | En kötü hata senaryosunu kapatır | Tam otonom merge |
+| 2026-06-03 | Workspace ayrımı: `workspaces` tablosu + `workspace_id` FK | Bağlam izolasyonu (work/personal); N-workspace genişler; per-workspace ayar (settings jsonb) | `scope enum` (2'ye kilitler), ayrı Supabase projesi (aşırı) |
 
 ---
 
@@ -45,6 +45,7 @@
 ## 🗺️ Sistem haritası (hızlı hatırlatma)
 ```
 dashboard (Next/Vercel) ─Supabase─ worker (VM)
+workspaces(work|personal) → projects → jobs → runs
 worker: clone→branch→ PO→Arch→FE+BE→Reviewer⟲→Tester⟲ →commit→push→PR
 insan kapısı: merge, migration, belirsizlik, limit, dış paylaşım
 ```

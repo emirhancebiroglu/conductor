@@ -1,4 +1,5 @@
 import type {
+  WorkspaceRow,
   ProjectRow,
   JobRow,
   RunRow,
@@ -11,6 +12,11 @@ import type {
 export type Database = {
   public: {
     Tables: {
+      workspaces: {
+        Row: WorkspaceRow;
+        Insert: Omit<WorkspaceRow, "id" | "created_at">;
+        Update: Partial<Omit<WorkspaceRow, "id">>;
+      };
       projects: {
         Row: ProjectRow;
         Insert: Omit<ProjectRow, "id" | "created_at">;

@@ -60,7 +60,8 @@ function toAgentRow(agent: typeof ALL_AGENTS[0]): AgentConfigRow {
     provider: agent.provider,
     model: agent.model,
     system_prompt: agent.systemPrompt,
-    skill_path: agent.skillPath,
+    skill_content: agent.skillContent,
+    category_id: agent.categoryId,
     enabled: agent.enabled,
     lane_override: agent.laneOverride,
     order: agent.order,
@@ -133,7 +134,8 @@ describe("GET /api/agents", () => {
     mockSupabase.from.mockImplementation(() => {
       callCount++;
       if (callCount === 1) return makeQueryBuilder(agentRows);
-      return makeQueryBuilder(jobRows);
+      if (callCount === 2) return makeQueryBuilder(jobRows);
+      return makeQueryBuilder([]);
     });
 
     const response = await getAgents();
@@ -234,7 +236,9 @@ describe("PUT /api/agents/[name]", () => {
     expect(body.agent.displayName).toBe("New Name");
   });
 
-  it("rejects invalid agent name", async () => {
+  it("rejects nonexistent agent", async () => {
+    mockSupabase.from.mockReturnValue(makeQueryBuilder(null));
+
     const response = await putAgent(
       makeRequest("http://localhost/api/agents/nonexistent", "PUT", {
         displayName: "New Name",
@@ -242,7 +246,7 @@ describe("PUT /api/agents/[name]", () => {
       { params: makeParams("nonexistent") },
     );
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(404);
   });
 
   it("rejects empty system prompt", async () => {
@@ -390,7 +394,7 @@ describe("PATCH /api/agents/[name]/toggle", () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body.error).toContain("at least one agent must be enabled");
+    expect(body.error).toContain("at least one agent must remain enabled");
   });
 
   it("returns 404 for nonexistent agent", async () => {

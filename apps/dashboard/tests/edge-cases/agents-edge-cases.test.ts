@@ -42,7 +42,8 @@ function makeAgentRow(overrides: Record<string, unknown> = {}) {
     provider: "claude",
     model: "claude-sonnet-4-6",
     system_prompt: "You are a product owner...",
-    skill_path: null,
+    skill_content: null,
+    category_id: null,
     enabled: true,
     lane_override: null,
     order: 1,
@@ -243,7 +244,7 @@ describe("agent management edge cases", () => {
 
       expect(response.status).toBe(400);
       const json = await response.json();
-      expect(json.error).toContain("at least one agent must be enabled");
+      expect(json.error).toContain("at least one agent must remain enabled");
     });
 
     it("allows disabling when multiple agents are enabled", async () => {
@@ -417,7 +418,7 @@ describe("agent management edge cases", () => {
     it("returns 400 for invalid agent name format", async () => {
       mockAuth({ id: "user-1" });
 
-      const { request, params } = createRequestWithParams("PUT", "this-is-not-a-valid-agent-name", {
+      const { request, params } = createRequestWithParams("PUT", "INVALID_agent!", {
         displayName: "Test",
       });
       const handler = await import("@/app/api/agents/[name]/route");
@@ -425,24 +426,25 @@ describe("agent management edge cases", () => {
 
       expect(response.status).toBe(400);
       const json = await response.json();
-      expect(json.error).toBe("Invalid agent name");
-    });
-
-    it("returns 400 for PATCH with invalid agent name", async () => {
-      mockAuth({ id: "user-1" });
-
-      const { request, params } = createRequestWithParams("PATCH", "invalid_name_with_underscore");
-      const handler = await import("@/app/api/agents/[name]/route");
-      const response = await handler.PATCH(request, { params } as never);
-
-      expect(response.status).toBe(400);
-      const json = await response.json();
-      expect(json.error).toBe("Invalid agent name");
+      expect(json.error).toBe("Invalid agent slug");
     });
   });
 
+  // 5. Invalid agent name in URL — PATCH
+  it("returns 400 for PATCH with invalid agent name", async () => {
+    mockAuth({ id: "user-1" });
+    const { request, params } = createRequestWithParams("PATCH", "INVALID-AGENT");
+
+    const handler = await import("@/app/api/agents/[name]/route");
+    const response = await handler.PATCH(request, { params } as never);
+
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(json.error).toBe("Invalid agent slug");
+  });
+
   // -----------------------------------------------------------------------
-  // 5. Order field validation
+  // 6. Order field validation
   // -----------------------------------------------------------------------
 
   describe("order field validation", () => {
@@ -980,13 +982,13 @@ describe("agent management edge cases", () => {
   });
 
   // -----------------------------------------------------------------------
-  // 14. skillPath nullable handling
+  // 14. skillContent nullable handling
   // -----------------------------------------------------------------------
 
-  describe("skillPath nullable handling", () => {
-    it("accepts null skillPath", async () => {
+  describe("skillContent nullable handling", () => {
+    it("accepts null skillContent", async () => {
       mockAuth({ id: "user-1" });
-      const updatedRow = makeAgentRow({ agent_name: "product-owner", skill_path: null });
+      const updatedRow = makeAgentRow({ agent_name: "product-owner", skill_content: null });
 
       mockSupabase.from.mockImplementation((table: string) => {
         if (table === "agent_config") {
@@ -999,7 +1001,7 @@ describe("agent management edge cases", () => {
       });
 
       const { request, params } = createRequestWithParams("PUT", "product-owner", {
-        skillPath: null,
+        skillContent: null,
       });
       const handler = await import("@/app/api/agents/[name]/route");
       const response = await handler.PUT(request, { params } as never);
@@ -1007,9 +1009,9 @@ describe("agent management edge cases", () => {
       expect(response.status).toBe(200);
     });
 
-    it("accepts valid string skillPath", async () => {
+    it("accepts valid string skillContent", async () => {
       mockAuth({ id: "user-1" });
-      const updatedRow = makeAgentRow({ agent_name: "product-owner", skill_path: "skills/product-owner/SKILL.md" });
+      const updatedRow = makeAgentRow({ agent_name: "product-owner", skill_content: "skills/product-owner/SKILL.md" });
 
       mockSupabase.from.mockImplementation((table: string) => {
         if (table === "agent_config") {
@@ -1022,14 +1024,14 @@ describe("agent management edge cases", () => {
       });
 
       const { request, params } = createRequestWithParams("PUT", "product-owner", {
-        skillPath: "skills/product-owner/SKILL.md",
+        skillContent: "skills/product-owner/SKILL.md",
       });
       const handler = await import("@/app/api/agents/[name]/route");
       const response = await handler.PUT(request, { params } as never);
 
       expect(response.status).toBe(200);
       const json = await response.json();
-      expect(json.agent.skillPath).toBe("skills/product-owner/SKILL.md");
+      expect(json.agent.skillContent).toBe("skills/product-owner/SKILL.md");
     });
   });
 });
