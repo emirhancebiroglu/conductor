@@ -106,6 +106,9 @@ function spawnAgent(
   const resolvedPremiumModel = model ?? PREMIUM_MODEL;
   const resolvedCheapModel = model ?? CHEAP_MODEL;
 
+  // BACKTEST_NO_WEBSEARCH=1 disables Tavily for both lanes — keeps backtest deterministic
+  const noWebSearch = process.env["BACKTEST_NO_WEBSEARCH"] === "1";
+
   if (lane === "premium") {
     bin = claudeBin();
     args = [
@@ -114,6 +117,9 @@ function spawnAgent(
       "--model", resolvedPremiumModel,
       "--effort", "medium",
     ];
+    if (!noWebSearch) {
+      args.push("--allowedTools", "mcp__tavily__tavily_search,mcp__tavily__tavily_extract,mcp__tavily__tavily_crawl,mcp__tavily__tavily_map,mcp__tavily__tavily_research");
+    }
   } else {
     const oc = opencodeArgs();
     bin = oc.bin;
@@ -122,7 +128,12 @@ function spawnAgent(
       "run",
       "--dangerously-skip-permissions",
       "-m", resolvedCheapModel,
+      "--variant", "max",
     ];
+    if (noWebSearch) {
+      // --pure disables all MCP plugins including Tavily for OpenCode
+      args.push("--pure");
+    }
   }
 
   return new Promise((resolve) => {

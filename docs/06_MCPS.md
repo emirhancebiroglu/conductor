@@ -10,7 +10,7 @@
 | **Filesystem** | repo dosyalarını oku/yaz | tüm kod agent'ları | 0 (çoğu agent'ta yerleşik) |
 | **Playwright** | tarayıcıyı sürerek E2E test | tester | 3 |
 | **Context7** | güncel kütüphane dokümanı (2026 API'leri) | frontend, backend | 3 |
-| **Web search** (Exa/Brave/Tavily) | pazar/teknik araştırma | product-owner, research | 3,5 |
+| **Web search** (Tavily) | pazar/teknik araştırma | product-owner, tüm agent'lar | 0 ✅ |
 | **Supabase** | DB şema/veri okuma (opsiyonel) | architect, backend | 4 |
 | **Product Hunt / Reddit** | fikir & pain araştırması | research | 5 |
 | **Sentry/observability** (ops.) | hata trace okuma | tester, reviewer | 6+ |
@@ -30,6 +30,8 @@
 ```json
 {
   "mcpServers": {
+    "tavily":     { "command": "npx", "args": ["-y", "tavily-mcp"],
+                    "env": { "TAVILY_API_KEY": "${TAVILY_API_KEY}" } },
     "github":     { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
                     "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" } },
     "playwright": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] },
@@ -44,6 +46,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
+    "tavily":     { "type": "local", "command": ["npx","-y","tavily-mcp"],
+                    "env": { "TAVILY_API_KEY": "${TAVILY_API_KEY}" } },
     "github":     { "type": "local", "command": ["npx","-y","@modelcontextprotocol/server-github"] },
     "playwright": { "type": "local", "command": ["npx","-y","@playwright/mcp@latest"] }
   }

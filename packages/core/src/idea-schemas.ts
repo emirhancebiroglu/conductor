@@ -43,7 +43,8 @@ export type IdeaResult = z.infer<typeof IdeaSchema>;
 export const KillScenarioSchema = z.object({
   test: z.string(),
   finding: z.string(),
-  severity: z.enum(["none", "low", "medium", "fatal"]),
+  // accept any string — agents sometimes emit "high" which isn't in the prompt enum
+  severity: z.string(),
 });
 
 export const ExecutionerResultItemSchema = z.object({
@@ -108,8 +109,10 @@ export const AdversarySchema = z.object({
   idea_title: z.string(),
   valid_objection: z.boolean(),
   objections: z.array(ObjectionSchema),
-  fatal_objection: z.string().nullable(),
-  overall_assessment: z.string(),
+  fatal_objection: z.string().nullable().optional(),
+  overall_assessment: z.string().optional(),
+  // valid_objection:false path uses "reason" instead of overall_assessment
+  reason: z.string().optional(),
 });
 export type AdversaryResult = z.infer<typeof AdversarySchema>;
 

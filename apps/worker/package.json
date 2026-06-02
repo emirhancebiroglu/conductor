@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx --env-file=.env.local watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "smoke": "tsx src/smoke-test.ts",
+    "smoke": "tsx --env-file=.env.local src/smoke-test.ts",
+    "backtest": "chcp 65001 >nul 2>&1 & tsx --env-file=.env.local src/backtest/run-backtest.ts",
+    "backtest:dry": "chcp 65001 >nul 2>&1 & tsx --env-file=.env.local src/backtest/run-backtest.ts --dry-run",
     "test": "vitest run",
     "test:watch": "vitest"
   },

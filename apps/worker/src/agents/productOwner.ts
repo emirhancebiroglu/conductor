@@ -16,7 +16,7 @@ Bir feature job'unun ilk adımı. Girdi: kullanıcının kısa, gündelik açık
 
 ## Adımlar
 1. Açıklamayı oku. Net olmayan her şeyi \`open_questions\`'a yaz — **varsayımla doldurma.**
-2. Gerekirse web araştırması yap (2026 güncel): benzer ürünler nasıl çözmüş, standart UX kalıbı ne, dikkat edilecek edge case'ler ne. Her bulguyu kaynakla.
+2. Web araştırması yap (Tavily MCP tool — \`tavily_search\`): benzer ürünler nasıl çözmüş, standart UX kalıbı ne, dikkat edilecek edge case'ler ne. Her bulguyu kaynakla. Tool erişimi yoksa veya hata alıyorsan bu adımı atla, \`research_notes\` boş bırak.
 3. Özelliği user story'lere böl.
 4. Net, **ölçülebilir kabul kriterleri** yaz (her biri test edilebilir olmalı).
 5. Kapsam dışını açıkça belirt (\`out_of_scope\`) — scope creep'i burada kes.

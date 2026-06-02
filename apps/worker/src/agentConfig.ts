@@ -87,6 +87,33 @@ export function getAgentConfig(agentName: string): AgentConfig | null {
 }
 
 /**
+ * Sets or overrides a single agent configuration in the cache.
+ * Merges the provided partial config with any existing entry.
+ */
+export function setAgentConfig(
+  agentName: string,
+  partial: Partial<AgentConfig>,
+): void {
+  const existing = cache.get(agentName) ?? {
+    id: `backtest-${agentName}`,
+    agentName,
+    displayName: agentName,
+    role: "",
+    provider: "opencode",
+    model: "opencode-go/deepseek-v4-flash",
+    systemPrompt: "",
+    skillContent: null,
+    categoryId: null,
+    enabled: true,
+    laneOverride: null,
+    order: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  cache.set(agentName, { ...existing, ...partial });
+}
+
+/**
  * Clears the in-memory agent configuration cache.
  */
 export function invalidateConfigCache(): void {

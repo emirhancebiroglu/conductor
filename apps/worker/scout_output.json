@@ -1,0 +1,264 @@
+{
+  "research_areas": [
+    "Not defteri ve wiki araclari",
+    "AI destekli bilgi yonetimi ve dokumantasyon",
+    "Freelancer ve KOBI operasyon araclari"
+  ],
+  "ideas": [
+    {
+      "rank": 1,
+      "title": "KnowledgeWeaver",
+      "one_liner": "Sirket ici bilgiyi Slack, Drive ve e-postadan otomatik tarayip AI ile yapilandiran, kimsenin manuel dokumantasyon yapmasini gerektirmeyen akilli wiki",
+      "pain_evidence": [
+        {
+          "quote": "Notion consistently runs into the same ceiling as companies grow: it lacks robust document verification and maintenance features, doesn't provide adequate cross-platform search capabilities (it searches docs only, not Slack, Drive, or GitHub)",
+          "source": "Slite - The 10 Best Notion Alternatives 2026"
+        },
+        {
+          "quote": "Your team's abandoned pages sit in a graveyard of half-finished wikis. Knowledge lives in someone's head, not your workspace",
+          "source": "TaskRhino - Best Notion Alternatives 2026"
+        }
+      ],
+      "scores": {
+        "pain_severity": 9.0,
+        "market_size": 7.5,
+        "competition_gap": 8.0,
+        "buildability": 7.5,
+        "distribution": 6.5,
+        "opportunity_score": 7.98
+      },
+      "top_competitors": ["Notion", "Confluence", "Guru", "Slab"],
+      "competitor_gap": "Hicbiri sirket icindeki mevcut bilgiyi (Slack konusmalari, Drive dosyalari, email) otomatik olarak kesfedip yapilandirmiyor. Hepsi manuel girdiye dayaniyor"
+    },
+    {
+      "rank": 2,
+      "title": "QuickBase",
+      "one_liner": "Hic kurulum gerektirmeyen, sektore ozel hazir sablonlarla gelen veritabani/wiki platformu - Notion'in esnekligi ama sifir bos sayfa sendromu",
+      "pain_evidence": [
+        {
+          "quote": "Notion requires upfront structure - you design templates, configure properties, build views - before you can start capturing information efficiently. Week one felt like configuring software rather than thinking",
+          "source": "The Modern Observer - Notion vs Obsidian vs Apple Notes 2026"
+        },
+        {
+          "quote": "People get overwhelmed with Notion initially which makes them quit",
+          "source": "Reddit r/Notion - This is for people frustrated with Notion"
+        }
+      ],
+      "scores": {
+        "pain_severity": 8.0,
+        "market_size": 7.5,
+        "competition_gap": 8.0,
+        "buildability": 8.5,
+        "distribution": 7.0,
+        "opportunity_score": 7.88
+      },
+      "top_competitors": ["Notion", "Coda", "Airtable"],
+      "competitor_gap": "Rakipler esneklik sunarken hicbiri 'hic kurulum yapmadan basla' deneyimi sunmuyor - ya bos sayfa (Notion) ya da cok kati yapi (Airtable)"
+    },
+    {
+      "rank": 3,
+      "title": "StudyWise",
+      "one_liner": "Ogrenciler ve surekli ogrenenler icin: ders kaydindan, PDF'ten, YouTube videosundan otomatik yapilandirilmis not, flashcards ve quiz cikaran AI calisma arkadasi",
+      "pain_evidence": [
+        {
+          "quote": "Where Notion requires manually building every structure and capturing every note by hand, Notelyn generates structured notes automatically from the content you encounter",
+          "source": "NoteLyn - Best Notion Alternative Apps in 2026"
+        },
+        {
+          "quote": "Record a live lecture on your phone and receive a full transcript, structured notes, and an AI summary within minutes",
+          "source": "NoteLyn - AI-powered Notion Alternative"
+        }
+      ],
+      "scores": {
+        "pain_severity": 8.0,
+        "market_size": 7.0,
+        "competition_gap": 8.5,
+        "buildability": 8.0,
+        "distribution": 7.0,
+        "opportunity_score": 7.83
+      },
+      "top_competitors": ["Notelyn", "RemNote", "Mem"],
+      "competitor_gap": "Mevcut AI not araclari ya sadece toplanti odakli (Fathom, Otter) ya da sadece ogrenci. StudyWise ogrenme odakli AI ile flashcards/quiz/summary entegrasyonunu tek urunde birlestirmiyor"
+    },
+    {
+      "rank": 4,
+      "title": "ChatWiki",
+      "one_liner": "Slack ve Teams'te calisan, sorulara dogal dille yanit veren AI wiki - kimse wiki aramaz, ama sormayi unutmaz",
+      "pain_evidence": [
+        {
+          "quote": "Instead of hoping employees search the wiki themselves, Siit's AI pulls the right documentation and delivers it in the flow of work",
+          "source": "Siit - The 12 Best Company Wiki Software Tools for 2026"
+        },
+        {
+          "quote": "The biggest challenge is keeping things organized without adding friction - especially when working in fast, iterative loops",
+          "source": "Reddit r/PKMS - What is your biggest problem with knowledge management"
+        }
+      ],
+      "scores": {
+        "pain_severity": 8.5,
+        "market_size": 7.0,
+        "competition_gap": 7.5,
+        "buildability": 8.0,
+        "distribution": 7.0,
+        "opportunity_score": 7.73
+      },
+      "top_competitors": ["Siit", "Guru", "Tettra"],
+      "competitor_gap": "Rakipler ya sadece Slack entegrasyonu (Siit) ya da sadece wiki (Guru). Ikisini de AI dogal dil sorgulamayla birlestiren ve kurulum gerektirmeyen oyuncu yok"
+    },
+    {
+      "rank": 5,
+      "title": "ComplyDoc",
+      "one_liner": "Regule sektorler icin (saglik, finans, hukuk) otomatik uyum dokumantasyonu, denetim izi ve imza akisi - Notion ve Confluence'in yapamadigi sey",
+      "pain_evidence": [
+        {
+          "quote": "A healthcare SaaS company needed to document SOPs, compliance policies, and audit trails for HIPAA certification. They were using Notion, but auditors wanted proof of page edit history, role-based permissions, and data residency guarantees. Notion couldn't provide those",
+          "source": "TaskRhino - 10 Best Notion Alternatives 2026"
+        },
+        {
+          "quote": "Enterprise teams often need more structure, security, and intelligence than Notion provides, specifically: permission-aware search, verifiable information with clear ownership",
+          "source": "Slite - The 10 Best Notion Alternatives 2026"
+        }
+      ],
+      "scores": {
+        "pain_severity": 9.0,
+        "market_size": 6.0,
+        "competition_gap": 8.5,
+        "buildability": 7.0,
+        "distribution": 5.5,
+        "opportunity_score": 7.63
+      },
+      "top_competitors": ["Confluence", "Document360", "Helpjuice"],
+      "competitor_gap": "Confluence agir ve pahali, Document360/Helyjuice sadece KB. Regulasyon ozelinde (HIPAA, SOC2, GDPR) dogrulama akisi olan hafif oyuncu yok"
+    },
+    {
+      "rank": 6,
+      "title": "SoloStack",
+      "one_liner": "Freelancer'lar icin not + teklif + sozlesme + zaman takibi + faturalama - 5 ayri uygulama yerine 1 tane, hepsi birbirine bagli",
+      "pain_evidence": [
+        {
+          "quote": "A disconnected stack of 4-5 tools costs $30-60/month in subscriptions and hours of weekly admin to move data between systems. A connected platform costs $19-49/month and handles the data connections automatically",
+          "source": "Plutio - Project Management for Freelancers 2026"
+        },
+        {
+          "quote": "Most freelancers start with free tools and end up with a disconnected stack: Trello, Toggl, Gmail, Google Docs, and QuickBooks. Nothing connects",
+          "source": "Plutio - Freelancer 2026 Playbook"
+        }
+      ],
+      "scores": {
+        "pain_severity": 8.5,
+        "market_size": 6.5,
+        "competition_gap": 7.5,
+        "buildability": 7.0,
+        "distribution": 7.5,
+        "opportunity_score": 7.53
+      },
+      "top_competitors": ["Plutio", "Bonsai", "HoneyBook"],
+      "competitor_gap": "Rakipler Proje yonetimi odakli ama saglam bir not/wiki katmani yok. Oysa freelance isin temelinde musteri notlari ve scope dokumantasyonu var"
+    },
+    {
+      "rank": 7,
+      "title": "VoiceBase",
+      "one_liner": "Sesle baslayan not alma: konus, AI yapilandirsin, etiketlesin, ilgili notlarla baglantilasin, organize etsin - sifre dokunmadan",
+      "pain_evidence": [
+        {
+          "quote": "Typing is so 2024: start with a voice note and let AI transcribe and organize your thoughts into a new note. Need to repurpose into a document? Don't do it by hand: ask Mem to transform it",
+          "source": "Mem AI - AI thought partner, Zapier 2026"
+        },
+        {
+          "quote": "I've been curious to try an AI notetaking tool that doesn't loudly announce itself when joining a call and only shares the notes afterwards with me",
+          "source": "Product Hunt user comment on AI note takers, 2026"
+        }
+      ],
+      "scores": {
+        "pain_severity": 7.5,
+        "market_size": 7.0,
+        "competition_gap": 7.5,
+        "buildability": 8.0,
+        "distribution": 6.5,
+        "opportunity_score": 7.38
+      },
+      "top_competitors": ["Mem", "Talknotes", "Voicenotes"],
+      "competitor_gap": "Mevcut sesli not araclari ya sadece transkripsiyon yapiyor ya da organize etmiyor. Ses girdisini otomatik yapilandiran, etiketleyen ve diger notlara baglayan yok"
+    },
+    {
+      "rank": 8,
+      "title": "BoltBase",
+      "one_liner": "Notion hizinda ama yerel-oncelikli, gercek zamanli ekip isbirligi olan blok tabanli not alma ve wiki platformu",
+      "pain_evidence": [
+        {
+          "quote": "Does anyone else find Notion painfully slow, or is it just me? Notion is almost unusable",
+          "source": "Reddit r/Notion - 2026"
+        },
+        {
+          "quote": "After 1 year only for me due to performance issues. Notion is just too slow when dealing",
+          "source": "Reddit r/Notion - Still using notion in 2026 or got any good alternative?"
+        },
+        {
+          "quote": "Collaborating with others requires some acrobatics. The easiest way is to create a vault, upload it to Google Drive, and share it with your team",
+          "source": "Zapier - The 9 best Notion alternatives in 2026 (on Obsidian's collaboration)"
+        }
+      ],
+      "scores": {
+        "pain_severity": 8.5,
+        "market_size": 7.0,
+        "competition_gap": 6.5,
+        "buildability": 7.0,
+        "distribution": 7.0,
+        "opportunity_score": 7.33
+      },
+      "top_competitors": ["Notion", "Obsidian", "Anytype", "Craft"],
+      "competitor_gap": "Obsidian hizli ama takim calismasi zayif. Notion takim calismasi iyi ama yavas. Anytype henuz olgun degil. Yerel-hizli + takim calismasini birlestiren bosluk var ama daralıyor"
+    },
+    {
+      "rank": 9,
+      "title": "MeetMind",
+      "one_liner": "Toplanti notlarini otomatik ceken, ozetleyen, aksiyon maddelerini CRM ve task araclarina iten AI toplanti asistani",
+      "pain_evidence": [
+        {
+          "quote": "We built it because we were tired of leaving meetings with lost context, forgotten decisions, and action items scattered everywhere",
+          "source": "Spellar AI on Product Hunt - 2026 launch"
+        },
+        {
+          "quote": "I've been curious to try an AI notetaking tool that doesn't loudly announce itself when joining a call",
+          "source": "Product Hunt user review - 2026"
+        }
+      ],
+      "scores": {
+        "pain_severity": 8.5,
+        "market_size": 8.0,
+        "competition_gap": 5.5,
+        "buildability": 7.0,
+        "distribution": 7.5,
+        "opportunity_score": 7.33
+      },
+      "top_competitors": ["Fathom", "Otter.ai", "Granola", "Spellar AI"],
+      "competitor_gap": "Yogun rekabet. Farklilasmak icin aksiyon maddelerini otomatik CRM'e (HubSpot, Salesforce) itme ve task tool'una (Linear, Asana) baglama gerek - cogu rakip sadece not/transkriptte kaliyor"
+    },
+    {
+      "rank": 10,
+      "title": "Blend",
+      "one_liner": "Muhendisler Markdown/Git'te yazar, teknik olmayan ekip uyeleri gorsel editorde duzenler - dokumantasyonu iki dunyaya da acan hibrit platform",
+      "pain_evidence": [
+        {
+          "quote": "Engineers want Markdown, pull requests, and repository workflows. Product managers and support teams want visual editing and collaborative writing tools. High-growth product teams rarely operate cleanly within either of these models",
+          "source": "GitBook - The 10 best software documentation tools in 2026"
+        },
+        {
+          "quote": "Tools that cannot support both workflows often create bottlenecks as documentation grows",
+          "source": "GitBook - 2026"
+        }
+      ],
+      "scores": {
+        "pain_severity": 7.5,
+        "market_size": 6.5,
+        "competition_gap": 7.5,
+        "buildability": 7.5,
+        "distribution": 6.0,
+        "opportunity_score": 7.15
+      },
+      "top_competitors": ["GitBook", "Notion", "Confluence"],
+      "competitor_gap": "GitBook ikisini de dener ama aslinda developer dokumantasyonuna kayar. Notion Git destegi yok. Confluence ise agir ve modern degil. Gercek anlamda esit agirlikli hibrit yok"
+    }
+  ],
+  "top_5_ids": [1, 2, 3, 4, 5]
+}
