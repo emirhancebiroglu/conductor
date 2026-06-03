@@ -27,6 +27,46 @@ importers:
         specifier: ^8.20.0
         version: 8.60.0(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3)
 
+  apps/cm-worker:
+    dependencies:
+      '@conductor/cm-adapters':
+        specifier: workspace:*
+        version: link:../../packages/cm-adapters
+      '@conductor/cm-core':
+        specifier: workspace:*
+        version: link:../../packages/cm-core
+      '@supabase/supabase-js':
+        specifier: ^2.106.2
+        version: 2.106.2
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@conductor/tsconfig':
+        specifier: workspace:*
+        version: link:../../packages/tsconfig
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.19.19
+      eslint:
+        specifier: ^9.18.0
+        version: 9.39.4(jiti@1.21.7)
+      eslint-config-prettier:
+        specifier: ^10.0.1
+        version: 10.1.8(eslint@9.39.4(jiti@1.21.7))
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.3
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.20.0
+        version: 8.60.0(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3)
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)
+
   apps/dashboard:
     dependencies:
       '@conductor/core':
@@ -206,6 +246,44 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+
+  packages/cm-adapters:
+    dependencies:
+      '@conductor/cm-core':
+        specifier: workspace:*
+        version: link:../cm-core
+      '@conductor/github':
+        specifier: workspace:*
+        version: link:../github
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@conductor/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)
+
+  packages/cm-core:
+    dependencies:
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@conductor/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)(jsdom@29.1.1)
 
   packages/core:
     dependencies:
