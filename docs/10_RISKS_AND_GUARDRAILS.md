@@ -15,6 +15,8 @@
 | Bakım yükü > tasarruf | Yüksek | Yüksek | Tek senaryo önce, yüzeyi dar tut, kullanılmayanı sil |
 | Belirsiz gereksinim → çöp çıktı | Yüksek | Orta | PO detaylandırma + `open_questions` → `needs_human` |
 | GitHub agent rate-limit (2026) | Orta | Orta | İş aralıkla, retry+backoff, gereksiz push'tan kaçın |
+| Checkmarx scan maliyeti/limit | Orta | Orta | CM worker retry+dead-letter; dashboard kill switch |
+| CM fix agent LLM maliyeti | Orta | Düşük | Agent runner stub/mock ile test; prod env flag ile sınırlı |
 | Üçüncü parti ToS ihlali (sosyal) | — | Yüksek | Sosyal otomasyon YOK; "üret+onay kuyruğu" |
 
 ## Sert kurallar (kod seviyesinde zorla)
@@ -28,6 +30,7 @@
 ## Kill-switch'ler
 - **Job durdur:** dashboard'da tek tıkla aktif run'ı iptal + worktree temizle.
 - **Tümünü durdur:** worker'ı drain moduna al (yeni job alma, mevcutları bitir/iptal).
+- **CM pipeline kapat:** dashboard'daki enable toggle → scheduler yeni scan başlatmaz, heartbeat worker_status'u `paused_manual` yapar.
 - **Şerit kapat:** premium veya cheap şeridi manuel kapat (limit/maliyet için).
 
 ## Bakım tuzağına karşı (en sinsi risk)
