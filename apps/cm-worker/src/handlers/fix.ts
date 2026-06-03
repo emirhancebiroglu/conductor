@@ -30,6 +30,7 @@ export async function handleFix(
   scanProvider: ScanProvider,
   agentRunner: AgentRunner,
   scanId: string,
+  gitOps?: GitOps,
 ): Promise<void> {
   const scanResp = await supabase
     .from("cm_scan")
@@ -79,11 +80,11 @@ export async function handleFix(
     return;
   }
 
-  const gitOps = new GitOps();
-  const workDir = await gitOps.cloneToTemp(`${repo.owner}/${repo.name}`);
+  const ops = gitOps ?? new GitOps();
+  const workDir = await ops.cloneToTemp(`${repo.owner}/${repo.name}`);
 
   try {
-    await gitOps.createBranch(workDir, "checkmarx-fix");
+    await ops.createBranch(workDir, "checkmarx-fix");
 
     await supabase
       .from("cm_scan")
@@ -117,12 +118,13 @@ export async function handleFix(
     await supabase
       .from("cm_scan")
       .update({
-        current_step: "Project verified, starting fix...",
+        status: "fixed",
+        current_step: "Fixes applied, ready for rescan",
       })
       .eq("id", scanId);
 
     console.log(`[fix] scan ${scanId}: project started successfully`);
   } finally {
-    await gitOps.cleanup(workDir);
+    await ops.cleanup(workDir);
   }
 }
