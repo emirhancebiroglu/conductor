@@ -35,6 +35,9 @@ importers:
       '@conductor/cm-core':
         specifier: workspace:*
         version: link:../../packages/cm-core
+      '@octokit/rest':
+        specifier: ^21.0.0
+        version: 21.1.1
       '@supabase/supabase-js':
         specifier: ^2.106.2
         version: 2.106.2

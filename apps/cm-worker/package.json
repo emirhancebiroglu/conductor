@@ -15,6 +15,7 @@
   "dependencies": {
     "@conductor/cm-adapters": "workspace:*",
     "@conductor/cm-core": "workspace:*",
+    "@octokit/rest": "^21.0.0",
     "@supabase/supabase-js": "^2.106.2",
     "execa": "^9.6.1",
     "pg-boss": "^12.18.2",
