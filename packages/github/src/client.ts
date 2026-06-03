@@ -104,3 +104,74 @@ export async function createPR(
   });
   return data.html_url;
 }
+
+export async function listRepos(
+  octokit: Octokit,
+  owner: string,
+): Promise<Array<{ name: string; defaultBranch: string }>> {
+  const repos: Array<{ name: string; defaultBranch: string }> = [];
+  let page = 1;
+  const perPage = 100;
+
+  for (;;) {
+    const { data } = await octokit.rest.repos.listForOrg({
+      org: owner,
+      page,
+      per_page: perPage,
+      type: "all",
+      sort: "full_name",
+    });
+
+    for (const repo of data) {
+      repos.push({ name: repo.name, defaultBranch: repo.default_branch ?? "main" });
+    }
+
+    if (data.length < perPage) break;
+    page++;
+  }
+
+  return repos;
+}
+
+export async function fileExists(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  path: string,
+  branch?: string,
+): Promise<boolean> {
+  try {
+    const ref = branch ?? "HEAD";
+    await octokit.rest.repos.getContent({ owner, repo, path, ref });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type DiscoverReposOptions = {
+  octokit: Octokit;
+  owner: string;
+  namePrefix?: string;
+  configPath?: string;
+};
+
+export async function discoverRepos(
+  options: DiscoverReposOptions,
+): Promise<Array<{ name: string; defaultBranch: string }>> {
+  const { octokit, owner, namePrefix = "ms", configPath = ".github/checkmarx_scan.yml" } = options;
+
+  const allRepos = await listRepos(octokit, owner);
+  const matched: Array<{ name: string; defaultBranch: string }> = [];
+
+  for (const repo of allRepos) {
+    if (!repo.name.startsWith(namePrefix)) continue;
+
+    const hasConfig = await fileExists(octokit, owner, repo.name, configPath, repo.defaultBranch);
+    if (!hasConfig) continue;
+
+    matched.push(repo);
+  }
+
+  return matched;
+}
