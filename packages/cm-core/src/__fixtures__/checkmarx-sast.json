@@ -1,0 +1,35 @@
+{
+  "results": {
+    "sast": {
+      "findings": [
+        {
+          "queryName": "SQL Injection",
+          "severity": "HIGH",
+          "fileName": "src/users.ts",
+          "line": 42,
+          "codeSnippet": "  db.query(\"SELECT * FROM users WHERE id = \" + userId, (err, rows) => {",
+          "language": "TypeScript",
+          "type": "sast"
+        },
+        {
+          "queryName": "Stored XSS",
+          "severity": "CRITICAL",
+          "fileName": "src/components/Profile.tsx",
+          "line": 128,
+          "codeSnippet": "  <div dangerouslySetInnerHTML={{ __html: user.bio }} />",
+          "language": "TypeScript",
+          "type": "sast"
+        },
+        {
+          "queryName": "Insecure Randomness",
+          "severity": "MEDIUM",
+          "fileName": "src/auth/token.ts",
+          "line": 15,
+          "codeSnippet": "  const token = Math.random().toString(36).slice(2);",
+          "language": "TypeScript",
+          "type": "sast"
+        }
+      ]
+    }
+  }
+}

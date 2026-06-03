@@ -1,0 +1,10 @@
+{
+  "results": {
+    "sca": {
+      "findings": []
+    },
+    "sast": {
+      "findings": []
+    }
+  }
+}

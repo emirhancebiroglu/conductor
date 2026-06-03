@@ -1,0 +1,48 @@
+{
+  "results": {
+    "sca": {
+      "findings": [
+        {
+          "packageName": "lodash",
+          "packageVersion": "4.17.20",
+          "fixedVersion": "4.17.21",
+          "severity": "CRITICAL",
+          "cveId": "CVE-2024-1234",
+          "cveDescription": "Prototype Pollution in lodash via defaultsDeep",
+          "recommendedVersion": "4.17.21",
+          "type": "sca"
+        },
+        {
+          "packageName": "axios",
+          "packageVersion": "0.27.2",
+          "fixedVersion": "1.6.0",
+          "severity": "HIGH",
+          "cveId": "CVE-2024-5678",
+          "cveDescription": "Server-Side Request Forgery in axios",
+          "recommendedVersion": "1.6.0",
+          "type": "sca"
+        },
+        {
+          "packageName": "minimist",
+          "packageVersion": "1.2.5",
+          "fixedVersion": "1.2.8",
+          "severity": "MEDIUM",
+          "cveId": "CVE-2023-1234",
+          "cveDescription": "Prototype Pollution in minimist",
+          "recommendedVersion": "1.2.8",
+          "type": "sca"
+        },
+        {
+          "packageName": "express",
+          "packageVersion": "4.17.1",
+          "fixedVersion": "4.19.2",
+          "severity": "HIGH",
+          "cveId": "CVE-2024-9101",
+          "cveDescription": "Path traversal in express static file serving",
+          "recommendedVersion": "4.19.2",
+          "type": "sca"
+        }
+      ]
+    }
+  }
+}
