@@ -14,6 +14,7 @@
   "dependencies": {
     "@conductor/cm-core": "workspace:*",
     "@conductor/github": "workspace:*",
+    "execa": "^9.6.1",
     "zod": "^3.24.0"
   },
   "devDependencies": {
