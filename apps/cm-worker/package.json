@@ -13,9 +13,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@conductor/cm-core": "workspace:*",
     "@conductor/cm-adapters": "workspace:*",
+    "@conductor/cm-core": "workspace:*",
     "@supabase/supabase-js": "^2.106.2",
+    "pg-boss": "^12.18.2",
     "zod": "^3.24.0"
   },
   "devDependencies": {
