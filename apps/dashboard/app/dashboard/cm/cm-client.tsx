@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CmPipelineForm } from "./cm-pipeline-form";
 
 type Tab = "pipeline" | "repos" | "runs" | "reports";
 
@@ -40,11 +41,7 @@ export function CmClient() {
       </div>
 
       <div className="cm-content">
-        {activeTab === "pipeline" && (
-          <div className="cm-placeholder">
-            <p>Pipeline settings form will be rendered here.</p>
-          </div>
-        )}
+        {activeTab === "pipeline" && <CmPipelineForm />}
         {activeTab === "repos" && (
           <div className="cm-placeholder">
             <p>Repos management tab will be rendered here.</p>
