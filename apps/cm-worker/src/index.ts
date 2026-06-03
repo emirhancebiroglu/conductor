@@ -1,12 +1,13 @@
 import { createPgBoss } from "./db.js";
 import { loadConfig } from "./config.js";
-
-const QUEUE_SCAN = "cm.scan";
+import { createSupabaseClient } from "./db.js";
+import { createScanWorkHandler, setupScanQueue, QUEUE_SCAN, DEFAULT_RETRY_LIMIT, DEFAULT_RETRY_DELAY_SECONDS } from "./handlers/retry.js";
 
 async function main(): Promise<void> {
   console.log("[cm-worker] booting");
 
   const config = loadConfig();
+  const supabase = createSupabaseClient();
   const boss = createPgBoss();
 
   console.log(`[cm-worker] scan provider: ${config.scanProvider.constructor.name}`);
@@ -15,10 +16,13 @@ async function main(): Promise<void> {
   await boss.start();
   console.log("[cm-worker] pg-boss started");
 
-  void boss.work(QUEUE_SCAN, () => {
-    console.log("[cm-worker] scan job received (handler not yet implemented)");
-    return Promise.resolve();
+  await setupScanQueue(boss, {
+    retryLimit: DEFAULT_RETRY_LIMIT,
+    retryDelaySeconds: DEFAULT_RETRY_DELAY_SECONDS,
   });
+
+  const workHandler = createScanWorkHandler(supabase, config.scanProvider);
+  void boss.work(QUEUE_SCAN, workHandler);
 
   console.log("[cm-worker] ready");
 
