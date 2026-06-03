@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CmPipelineForm } from "./cm-pipeline-form";
 import { CmReposTab } from "./cm-repos-tab";
+import { CmRunsTab } from "./cm-runs-tab";
 
 type Tab = "pipeline" | "repos" | "runs" | "reports";
 
@@ -44,11 +45,7 @@ export function CmClient() {
       <div className="cm-content">
         {activeTab === "pipeline" && <CmPipelineForm />}
         {activeTab === "repos" && <CmReposTab />}
-        {activeTab === "runs" && (
-          <div className="cm-placeholder">
-            <p>Runs list and detail will be rendered here.</p>
-          </div>
-        )}
+        {activeTab === "runs" && <CmRunsTab />}
         {activeTab === "reports" && (
           <div className="cm-placeholder">
             <p>Reports download will be rendered here.</p>
