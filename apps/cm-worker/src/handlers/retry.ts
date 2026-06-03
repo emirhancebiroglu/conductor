@@ -15,15 +15,42 @@ export type RetryConfig = {
   retryDelaySeconds: number;
 };
 
+async function isPipelineEnabled(supabase: SupabaseClient): Promise<boolean> {
+  try {
+    const result = await supabase
+      .from("cm_pipeline")
+      .select("enabled")
+      .limit(1)
+      .maybeSingle() as unknown as { data: { enabled: boolean } | null };
+    return result.data?.enabled ?? false;
+  } catch {
+    return false;
+  }
+}
+
 export function createScanWorkHandler(
   supabase: SupabaseClient,
   scanProvider: ScanProvider,
 ): (jobs: Array<{ data: { scanId: string } }>) => Promise<void> {
   return async (jobs) => {
     for (const job of jobs) {
+      const startTime = Date.now();
+
+      // Kill switch: skip if pipeline is disabled
+      const enabled = await isPipelineEnabled(supabase);
+      if (!enabled) {
+        console.log(`[retry] pipeline disabled — skipping scan job ${job.data.scanId}`);
+        continue;
+      }
+
       try {
         await handleScan(supabase, scanProvider, { scanId: job.data.scanId });
+        const elapsed = Date.now() - startTime;
+        console.log(`[retry] scan ${job.data.scanId} completed in ${elapsed}ms`);
       } catch (err) {
+        const elapsed = Date.now() - startTime;
+        console.log(`[retry] scan ${job.data.scanId} failed after ${elapsed}ms`);
+
         if (err instanceof CheckmarxScanError) {
           if (err.outcome === "system_fail") {
             console.log(`[retry] system fail, will retry: ${err.message}`);
