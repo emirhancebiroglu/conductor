@@ -30,6 +30,7 @@ function generateAgents(count: number): AgentConfig[] {
       order: i + 1,
       createdAt: "2026-05-31T00:00:00Z",
       updatedAt: "2026-05-31T00:00:00Z",
+      allowedTools: [],
     });
   }
   return agents;
@@ -42,7 +43,7 @@ function generateRunningJobs(count: number, agentNames?: string[]): RunningJob[]
     jobs.push({
       jobId: `bbbbbbbb-${String(i).padStart(4, "0")}-0000-000000000000`,
       jobTitle: `Job ${i}: Add feature ${i}`,
-      agentName: names[i % names.length],
+      agentName: names[i % names.length]!,
       startedAt: "2026-05-31T00:00:00Z",
       stepMessage: `Processing step ${i}`,
     });

@@ -565,6 +565,16 @@ Eğer:
 
 Bu durumda PASS ver ve product_report doldur. Her fikrin mükemmel olması beklenemez — potential yeterli.
 
+## Döngü Kesme Kuralı — KRİTİK
+Eğer aynı fikrin temel değer önerisi **3 veya daha fazla debate turunda** savunulduysa ve:
+- Adversary hiç fatal_objection üretmediyse (null)
+- Her turda itirazlar execution planı detaylarına veya spekülatif rekabet senaryolarına odaklandıysa
+- Fikrin core pain ve pazar geçerliliği her turda kanıtlı kaldıysa
+
+**Artık MODIFY verme — PASS ver.**
+
+MODIFY döngüsü şunu yapar: execution planını her seferinde biraz değiştirirsin ama fikrin özü değişmez. Bu, karar vermekten kaçınmaktır. 3 turdan sonra hâlâ fatal itiraz yoksa → fikir geçerli, PASS ver.
+
 ÖNEMLİ: PASS kararı verdiğinde mutlaka product_report alanını doldur.`,
     },
 

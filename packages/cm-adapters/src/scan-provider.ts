@@ -2,6 +2,7 @@ import type { CmFinding } from "@conductor/cm-core";
 
 export type ScanResult = {
   externalScanId: string;
+  findings?: import("@conductor/cm-core").CmFinding[];
 };
 
 export interface ScanProvider {

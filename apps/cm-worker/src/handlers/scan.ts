@@ -34,12 +34,12 @@ export async function handleScan(
 ): Promise<void> {
   const { scanId } = job;
 
-  // why: supabase-js returns untyped rows; we cast to CmScanRow after the call
+  // why: maybeSingle avoids "coerce to single JSON" error when 0 or multiple rows returned
   const scanResp = await supabase
     .from("cm_scan")
     .select("*")
     .eq("id", scanId)
-    .single() as unknown as { data: CmScanRow | null; error: { message: string } | null };
+    .maybeSingle() as unknown as { data: CmScanRow | null; error: { message: string } | null };
 
   if (scanResp.error || !scanResp.data) {
     throw new Error(`Failed to load cm_scan ${scanId}: ${scanResp.error?.message ?? "not found"}`);
@@ -61,16 +61,34 @@ export async function handleScan(
     })
     .eq("id", scanId);
 
+  console.log(`[scan-handler] processing scan ${scanId}`);
+
+  // Load repo owner+name
+  const repoResp = await supabase
+    .from("cm_repo")
+    .select("owner, name, default_branch")
+    .eq("id", scanRow.repo_id)
+    .maybeSingle() as unknown as { data: { owner: string; name: string; default_branch: string } | null; error: { message: string } | null };
+
+  if (repoResp.error || !repoResp.data) {
+    throw new Error(`Failed to load cm_repo ${scanRow.repo_id}: ${repoResp.error?.message ?? "not found"}`);
+  }
+
+  // Use repo's default_branch; fallback to branch_scanned recorded on the scan row
+  const branch = scanRow.branch_scanned ?? repoResp.data.default_branch ?? "main";
+
   try {
-    const repo = { owner: scanRow.repo_id, name: "" };
-    const { externalScanId } = await scanProvider.scan(repo, scanRow.branch_scanned ?? "main");
+    const repo = { owner: repoResp.data.owner, name: repoResp.data.name };
+    const scanResult = await scanProvider.scan(repo, branch);
+    const { externalScanId } = scanResult;
 
     await supabase
       .from("cm_scan")
-      .update({ external_scan_id: externalScanId, current_step: "Fetching results..." })
+      .update({ external_scan_id: externalScanId, branch_scanned: branch, current_step: "Fetching results..." })
       .eq("id", scanId);
 
-    const findings = await scanProvider.fetchResults(externalScanId);
+    // Use embedded findings if scan() already parsed them (avoids second cx invocation)
+    const findings = scanResult.findings ?? await scanProvider.fetchResults(externalScanId);
 
     for (const finding of findings) {
       await supabase.from("cm_finding").upsert(
@@ -89,6 +107,8 @@ export async function handleScan(
           fingerprint: finding.fingerprint,
           fix_status: "open",
           fix_attempts: 0,
+          description: finding.description,
+          taint_flow: finding.taintFlow,
         },
         { onConflict: "scan_id, fingerprint", ignoreDuplicates: false },
       );

@@ -1,3 +1,4 @@
+import { execa } from "execa";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentRunner, AgentRunnerTask } from "@conductor/cm-adapters";
 
@@ -8,6 +9,7 @@ type AgentConfigRow = {
   provider: string;
   model: string;
   system_prompt: string;
+  allowed_tools: string[] | null;
 };
 
 export type DispatchResult = {
@@ -16,6 +18,8 @@ export type DispatchResult = {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  changed: boolean;
+  summary: string;
 };
 
 export async function dispatchAgent(
@@ -37,6 +41,10 @@ export async function dispatchAgent(
   }
 
   const config = configResp.data;
+  const allowedTools = config.allowed_tools ?? [];
+
+  // Capture git state before agent runs (to detect changes)
+  const beforeHash = await getGitHash(task.workingDir);
 
   const result = await agentRunner.run(
     {
@@ -44,9 +52,14 @@ export async function dispatchAgent(
       provider: config.provider,
       model: config.model,
       systemPrompt: config.system_prompt,
+      allowedTools,
     },
     task,
   );
+
+  // Detect actual file changes via git
+  const afterHash = await getGitHash(task.workingDir);
+  const changed = beforeHash !== afterHash || await hasUncommittedChanges(task.workingDir);
 
   const runResp = await supabase
     .from("runs")
@@ -56,8 +69,8 @@ export async function dispatchAgent(
       lane: config.provider === "claude" ? "premium" : "cheap",
       model: config.model,
       status: "ok",
-      input: { taskDescription: task.description },
-      output: { summary: result.summary, edits: result.edits },
+      input: { taskDescription: task.description.slice(0, 500) },
+      output: { summary: result.summary, changed },
       log: null,
       iteration: 1,
     })
@@ -85,15 +98,34 @@ export async function dispatchAgent(
     model: config.model,
     inputTokens: result.usage.inputTokens,
     outputTokens: result.usage.outputTokens,
+    changed,
+    summary: result.summary,
   };
+}
+
+async function getGitHash(dir: string): Promise<string> {
+  try {
+    const { stdout } = await execa("git", ["rev-parse", "HEAD"], { cwd: dir });
+    return stdout.trim();
+  } catch {
+    return "";
+  }
+}
+
+async function hasUncommittedChanges(dir: string): Promise<boolean> {
+  try {
+    const { stdout } = await execa("git", ["status", "--porcelain"], { cwd: dir });
+    return stdout.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function estimateCost(provider: string, inputTokens: number, outputTokens: number): number {
   const rates: Record<string, { input: number; output: number }> = {
     claude: { input: 0.000015, output: 0.000075 },
-    opencode: { input: 0.000002, output: 0.000010 },
+    opencode: { input: 0.000002, output: 0.00001 },
   };
-
-  const rate = rates[provider] ?? { input: 0.000002, output: 0.000010 };
+  const rate = rates[provider] ?? { input: 0.000002, output: 0.00001 };
   return (inputTokens * rate.input + outputTokens * rate.output);
 }

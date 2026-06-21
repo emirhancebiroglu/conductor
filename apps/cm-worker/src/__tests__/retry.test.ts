@@ -39,8 +39,15 @@ function mockSupabase(pipelineEnabled: boolean) {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({ data: validRow, error: null }),
+          maybeSingle: vi.fn().mockResolvedValue({ data: validRow, error: null }),
           update: vi.fn().mockReturnThis(),
+        };
+      }
+      if (table === "cm_repo") {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: { owner: "test", name: "repo", default_branch: "main" }, error: null }),
         };
       }
       if (table === "cm_finding") {
@@ -62,8 +69,9 @@ describe("createScanWorkHandler", () => {
       fetchResults: vi.fn(),
     };
 
+    const boss = { send: vi.fn().mockResolvedValue(undefined) };
     const supabase = mockSupabase(true);
-    const handler = createScanWorkHandler(supabase, failingProvider);
+    const handler = createScanWorkHandler(supabase, failingProvider, boss as never);
 
     await expect(handler([{ data: { scanId: "scan-001" } }])).rejects.toThrow("Connection refused");
   });
@@ -76,8 +84,9 @@ describe("createScanWorkHandler", () => {
       fetchResults: vi.fn(),
     };
 
+    const boss = { send: vi.fn().mockResolvedValue(undefined) };
     const supabase = mockSupabase(true);
-    const handler = createScanWorkHandler(supabase, failingProvider);
+    const handler = createScanWorkHandler(supabase, failingProvider, boss as never);
 
     await expect(handler([{ data: { scanId: "scan-001" } }])).resolves.toBeUndefined();
   });
@@ -101,7 +110,7 @@ describe("createScanWorkHandler", () => {
           return {
             select: vi.fn().mockReturnThis(),
             eq: vi.fn().mockReturnThis(),
-            single: vi.fn().mockResolvedValue({ data: null, error: { message: "connection error" } }),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: "connection error" } }),
             update: vi.fn().mockReturnThis(),
           };
         }
@@ -109,23 +118,25 @@ describe("createScanWorkHandler", () => {
       }),
     } as unknown as SupabaseClient;
 
-    const handler = createScanWorkHandler(supabase, scanProvider);
+    const boss = { send: vi.fn().mockResolvedValue(undefined) };
+    const handler = createScanWorkHandler(supabase, scanProvider, boss as never);
 
     await expect(handler([{ data: { scanId: "scan-001" } }])).rejects.toThrow("Failed to load cm_scan");
   });
 
-  it("skips jobs when pipeline is disabled (kill switch)", async () => {
-    const scanMock = vi.fn();
+  it("proceeds with manual scan even when pipeline is disabled (kill switch only blocks auto-mode)", async () => {
+    const scanMock = vi.fn().mockRejectedValue(new CheckmarxScanError("scan error", "system_fail"));
     const provider: ScanProvider = {
       scan: scanMock,
       fetchResults: vi.fn(),
     };
 
+    const boss = { send: vi.fn().mockResolvedValue(undefined) };
     const supabase = mockSupabase(false);
-    const handler = createScanWorkHandler(supabase, provider);
+    const handler = createScanWorkHandler(supabase, provider, boss as never);
 
-    await expect(handler([{ data: { scanId: "scan-001" } }])).resolves.toBeUndefined();
-    expect(scanMock).not.toHaveBeenCalled();
+    await expect(handler([{ data: { scanId: "scan-001" } }])).rejects.toThrow("scan error");
+    expect(scanMock).toHaveBeenCalledTimes(1);
   });
 });
 

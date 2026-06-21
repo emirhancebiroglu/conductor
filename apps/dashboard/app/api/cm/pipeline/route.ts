@@ -7,6 +7,8 @@ const PatchPipelineSchema = z.object({
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   cron: z.string().optional(),
+  github_owner: z.string().optional(),
+  github_token_env: z.string().optional(),
   discovery_name_prefix: z.string().optional(),
   discovery_config_path: z.string().optional(),
   severity_threshold: z.array(z.string()).optional(),
@@ -15,6 +17,7 @@ const PatchPipelineSchema = z.object({
   report_dir: z.string().optional(),
   retry_cooldown_seconds: z.number().int().positive().optional(),
   max_fix_attempts: z.number().int().positive().optional(),
+  branch_exclude_pattern: z.string().optional(),
 });
 
 export const dynamic = "force-dynamic";

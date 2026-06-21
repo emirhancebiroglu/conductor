@@ -33,6 +33,7 @@ describe("config", () => {
       process.env.CX_BASE_URI = "https://cx.example.com";
       process.env.CX_TENANT = "test";
       process.env.CX_APIKEY = "test-key";
+      process.env.GITHUB_TOKEN_WORK = "ghp_test";
       const config = loadConfig();
       expect(config.scanProvider.constructor.name).toBe("CheckmarxCliProvider");
     });

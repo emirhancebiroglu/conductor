@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -19,9 +19,13 @@ export class GitOps {
     this.tempRoot = tempRoot ?? join(tmpdir(), "cm-git-ops");
   }
 
-  async cloneToTemp(repoUrl: string): Promise<string> {
+  async cloneToTemp(repoUrl: string, branch?: string): Promise<string> {
+    await mkdir(this.tempRoot, { recursive: true });
     const dir = await mkdtemp(join(this.tempRoot, TEMP_PREFIX));
-    await execa("git", ["clone", repoUrl, dir], { timeout: 120_000 });
+    const args = branch
+      ? ["clone", "--branch", branch, "--single-branch", repoUrl, dir]
+      : ["clone", repoUrl, dir];
+    await execa("git", args, { timeout: 120_000 });
     return dir;
   }
 
@@ -39,6 +43,10 @@ export class GitOps {
   async push(dir: string, branch: string): Promise<void> {
     this.ensureUnderTempRoot(dir);
     await execa("git", ["push", "origin", branch], { cwd: dir, timeout: 60_000 });
+  }
+
+  async pushBranch(dir: string, branch: string): Promise<void> {
+    return this.push(dir, branch);
   }
 
   async cleanup(dir: string): Promise<void> {

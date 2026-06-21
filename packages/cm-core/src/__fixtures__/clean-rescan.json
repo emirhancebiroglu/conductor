@@ -1,10 +1,3 @@
 {
-  "results": {
-    "sca": {
-      "findings": []
-    },
-    "sast": {
-      "findings": []
-    }
-  }
+  "results": []
 }

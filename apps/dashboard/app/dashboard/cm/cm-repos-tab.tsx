@@ -21,11 +21,12 @@ export function CmReposTab() {
   const [repos, setRepos] = useState<CmRepo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [isRunningSelected, setIsRunningSelected] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingPriority, setEditingPriority] = useState<Record<string, number>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [addOwner, setAddOwner] = useState("");
   const [addName, setAddName] = useState("");
-  const [editingRunConfig, setEditingRunConfig] = useState<Record<string, string>>({});
 
   const fetchRepos = useCallback(async () => {
     try {
@@ -88,24 +89,6 @@ export function CmReposTab() {
     }
   };
 
-  const updateRunConfig = async (repo: CmRepo) => {
-    const raw = editingRunConfig[repo.id];
-    if (raw === undefined) return;
-    try {
-      const parsed = raw.trim() ? JSON.parse(raw) : null;
-      const res = await fetch(`/api/cm/repos/${repo.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_config: parsed }),
-      });
-      if (!res.ok) throw new Error("Update failed");
-      setRepos((prev) => prev.map((r) => (r.id === repo.id ? { ...r, run_config: parsed } : r)));
-      toast.success(`Run config updated for ${repo.name}`);
-    } catch {
-      toast.error("Invalid JSON or update failed");
-    }
-  };
-
   const deleteRepo = async (repo: CmRepo) => {
     if (!confirm(`Remove ${repo.name} from the pipeline?`)) return;
     try {
@@ -130,6 +113,35 @@ export function CmReposTab() {
       toast.success(`Scan enqueued for ${repo.name}`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to enqueue scan");
+    }
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const runSelected = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setIsRunningSelected(true);
+    try {
+      const res = await fetch("/api/cm/scans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo_ids: ids }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to enqueue scans");
+      toast.success(`${ids.length} scan(s) enqueued`);
+      setSelectedIds(new Set());
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to enqueue scans");
+    } finally {
+      setIsRunningSelected(false);
     }
   };
 
@@ -169,6 +181,14 @@ export function CmReposTab() {
         <Button onClick={() => setShowAddForm(!showAddForm)} className="rt-btn rt-btn--ghost">
           {showAddForm ? "Cancel" : "+ Add Manual"}
         </Button>
+        <Button
+          onClick={runSelected}
+          disabled={selectedIds.size === 0 || isRunningSelected}
+          className="rt-btn rt-btn--primary"
+          style={{ backgroundColor: selectedIds.size > 0 ? "var(--green, #34d399)" : "var(--border)", color: "var(--surface)" }}
+        >
+          {isRunningSelected ? "Running..." : `Run Selected (${selectedIds.size})`}
+        </Button>
       </div>
 
       {showAddForm && (
@@ -181,11 +201,17 @@ export function CmReposTab() {
 
       {repos.length === 0 ? (
         <div className="cm-placeholder" style={{ marginTop: "16px" }}>
-          <p>No repos registered. Click "Discover Now" or add one manually.</p>
+          <p>No repos registered. Click &ldquo;Discover Now&rdquo; or add one manually.</p>
         </div>
       ) : (
         <div className="rt-table">
           <div className="rt-header">
+            <span className="rt-col rt-col--checkbox">
+              <input type="checkbox" onChange={() => {
+                if (selectedIds.size === repos.length) setSelectedIds(new Set());
+                else setSelectedIds(new Set(repos.map((r) => r.id)));
+              }} checked={selectedIds.size === repos.length && repos.length > 0} aria-label="Select all repos" />
+            </span>
             <span className="rt-col rt-col--name">Repo</span>
             <span className="rt-col rt-col--source">Source</span>
             <span className="rt-col rt-col--priority">Priority</span>
@@ -194,6 +220,9 @@ export function CmReposTab() {
           </div>
           {repos.map((repo) => (
             <div key={repo.id} className="rt-row">
+              <span className="rt-col rt-col--checkbox">
+                <input type="checkbox" checked={selectedIds.has(repo.id)} onChange={() => toggleSelected(repo.id)} aria-label={`Select ${repo.name}`} />
+              </span>
               <span className="rt-col rt-col--name">
                 <span className="rt-repo-name">{repo.owner}/{repo.name}</span>
                 <span className="rt-branch">{repo.default_branch}</span>
@@ -238,6 +267,8 @@ export function CmReposTab() {
         .rt-header { display: flex; padding: 10px 16px; background: var(--surface-overlay); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); border-bottom: 1px solid var(--border); }
         .rt-row { display: flex; padding: 10px 16px; border-bottom: 1px solid var(--border); align-items: center; font-size: 12px; }
         .rt-row:last-child { border-bottom: none; }
+        .rt-col--checkbox { flex: 0.3; display: flex; align-items: center; }
+        .rt-col--checkbox input { width: 14px; height: 14px; cursor: pointer; }
         .rt-col--name { flex: 3; display: flex; flex-direction: column; gap: 2px; }
         .rt-col--source { flex: 1; }
         .rt-col--priority { flex: 1; }

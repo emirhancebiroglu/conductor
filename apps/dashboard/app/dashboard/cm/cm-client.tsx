@@ -47,8 +47,9 @@ export function CmClient() {
         {activeTab === "repos" && <CmReposTab />}
         {activeTab === "runs" && <CmRunsTab />}
         {activeTab === "reports" && (
-          <div className="cm-placeholder">
-            <p>Reports download will be rendered here.</p>
+          <div className="cm-placeholder" style={{ padding: "60px", textAlign: "center", color: "var(--text-dim)", border: "1px dashed var(--border)", fontSize: "12px" }}>
+            <div style={{ fontSize: "24px", marginBottom: "12px", opacity: 0.3 }}>⬡</div>
+            Reports generation not yet enabled.
           </div>
         )}
       </div>

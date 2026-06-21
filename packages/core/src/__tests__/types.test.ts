@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+﻿import { describe, it, expect } from "vitest";
 import {
   AgentConfigSchema,
   AgentNameSchema,
@@ -175,78 +175,67 @@ describe("AgentConfigSchema", () => {
   });
 
   it("rejects missing required field agentName", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { agentName, ...rest } = validConfig;
+    const { agentName: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field displayName", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { displayName, ...rest } = validConfig;
+    const { displayName: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field role", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { role, ...rest } = validConfig;
+    const { role: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field provider", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { provider, ...rest } = validConfig;
+    const { provider: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field model", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { model, ...rest } = validConfig;
+    const { model: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field systemPrompt", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { systemPrompt, ...rest } = validConfig;
+    const { systemPrompt: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field enabled", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { enabled, ...rest } = validConfig;
+    const { enabled: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field order", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { order, ...rest } = validConfig;
+    const { order: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field id", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { id, ...rest } = validConfig;
+    const { id: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field createdAt", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { createdAt, ...rest } = validConfig;
+    const { createdAt: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field updatedAt", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { updatedAt, ...rest } = validConfig;
+    const { updatedAt: _, ...rest } = validConfig;
     const result = AgentConfigSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
@@ -273,15 +262,13 @@ describe("ProviderModelSchema", () => {
   });
 
   it("capabilities is required in schema (DB provides default)", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { capabilities, ...rest } = validModel;
+    const { capabilities: _, ...rest } = validModel;
     const result = ProviderModelSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("available is required in schema (DB provides default)", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { available, ...rest } = validModel;
+    const { available: _, ...rest } = validModel;
     const result = ProviderModelSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
@@ -300,22 +287,19 @@ describe("ProviderModelSchema", () => {
   });
 
   it("rejects missing required field provider", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { provider, ...rest } = validModel;
+    const { provider: _, ...rest } = validModel;
     const result = ProviderModelSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field modelId", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { modelId, ...rest } = validModel;
+    const { modelId: _, ...rest } = validModel;
     const result = ProviderModelSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing required field displayName", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { displayName, ...rest } = validModel;
+    const { displayName: _, ...rest } = validModel;
     const result = ProviderModelSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
@@ -374,13 +358,13 @@ describe("WorkspaceSchema", () => {
   });
 
   it("rejects missing name", () => {
-    const { name, ...rest } = valid;
+    const { name: _, ...rest } = valid;
     const result = WorkspaceSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
 
   it("rejects missing id", () => {
-    const { id, ...rest } = valid;
+    const { id: _, ...rest } = valid;
     const result = WorkspaceSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
@@ -528,7 +512,7 @@ describe("JobSchema — currentAgent / currentStepMessage / workspaceId", () => 
   });
 
   it("rejects missing workspaceId", () => {
-    const { workspaceId, ...rest } = baseJob;
+    const { workspaceId: _, ...rest } = baseJob;
     const result = JobSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });
@@ -606,7 +590,7 @@ describe("JobRowSchema — current_agent / current_step_message / workspace_id",
   });
 
   it("rejects missing workspace_id", () => {
-    const { workspace_id, ...rest } = baseRow;
+    const { workspace_id: _, ...rest } = baseRow;
     const result = JobRowSchema.safeParse(rest);
     expect(result.success).toBe(false);
   });

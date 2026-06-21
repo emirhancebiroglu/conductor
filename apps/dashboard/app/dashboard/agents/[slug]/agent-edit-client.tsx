@@ -54,6 +54,7 @@ export function AgentEditClient({
   const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt);
   const [skillContent, setSkillContent] = useState<string | null>(agent.skillContent);
   const [laneOverride, setLaneOverride] = useState<Lane | null>(agent.laneOverride);
+  const [allowedTools, setAllowedTools] = useState<string[]>(agent.allowedTools ?? []);
   const [order, setOrder] = useState(agent.order);
   const [enabled, setEnabled] = useState(agent.enabled);
   const [isSaving, setIsSaving] = useState(false);
@@ -80,6 +81,7 @@ export function AgentEditClient({
     systemPrompt !== agent.systemPrompt ||
     skillContent !== agent.skillContent ||
     laneOverride !== agent.laneOverride ||
+    JSON.stringify([...allowedTools].sort((a, b) => a.localeCompare(b))) !== JSON.stringify([...(agent.allowedTools ?? [])].sort((a, b) => a.localeCompare(b))) ||
     order !== agent.order ||
     enabled !== agent.enabled;
 
@@ -105,6 +107,7 @@ export function AgentEditClient({
     setSystemPrompt(agent.systemPrompt);
     setSkillContent(agent.skillContent);
     setLaneOverride(agent.laneOverride);
+    setAllowedTools(agent.allowedTools ?? []);
     setOrder(agent.order);
     setEnabled(agent.enabled);
     toast.info("Changes discarded");
@@ -117,13 +120,15 @@ export function AgentEditClient({
       const hasFieldsChanged =
         displayName !== agent.displayName || role !== agent.role || categoryId !== agent.categoryId ||
         provider !== agent.provider || model !== agent.model || systemPrompt !== agent.systemPrompt ||
-        skillContent !== agent.skillContent || laneOverride !== agent.laneOverride || order !== agent.order;
+        skillContent !== agent.skillContent || laneOverride !== agent.laneOverride ||
+        JSON.stringify([...allowedTools].sort((a, b) => a.localeCompare(b))) !== JSON.stringify([...(agent.allowedTools ?? [])].sort((a, b) => a.localeCompare(b))) ||
+        order !== agent.order;
 
       if (hasFieldsChanged) {
         const res = await fetch(`/api/agents/${agent.agentName}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ displayName: displayName.trim(), role: role.trim(), categoryId, provider, model, systemPrompt, skillContent: skillContent?.trim() || null, laneOverride, order }),
+          body: JSON.stringify({ displayName: displayName.trim(), role: role.trim(), categoryId, provider, model, systemPrompt, skillContent: skillContent?.trim() || null, laneOverride, allowedTools, order }),
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || "Failed to update");
@@ -291,6 +296,37 @@ export function AgentEditClient({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="detail-field" style={{ marginTop: "16px" }}>
+              <Label className="detail-label">Allowed Tools</Label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "6px" }}>
+                {(["tavily", "context7", "github", "edit", "shell"] as const).map((tool) => {
+                  const active = allowedTools.includes(tool);
+                  return (
+                    <button
+                      key={tool}
+                      type="button"
+                      onClick={() => setAllowedTools(active ? allowedTools.filter((t) => t !== tool) : [...allowedTools, tool])}
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: "11px",
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        borderRadius: "4px",
+                        border: active ? "1px solid var(--amber)" : "1px solid var(--border)",
+                        background: active ? "rgba(251,191,36,0.12)" : "var(--surface-overlay)",
+                        color: active ? "var(--amber)" : "var(--text-dim)",
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {tool}
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
+                Controls which MCP/tools the agent may invoke during execution.
+              </p>
             </div>
           </section>
 

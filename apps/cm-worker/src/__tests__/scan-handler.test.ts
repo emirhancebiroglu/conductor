@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { handleScan } from "../handlers/scan.js";
 import { MockScanProvider } from "@conductor/cm-adapters";
 
+function createMockRepoRow(overrides: Record<string, unknown> = {}) {
+  return { id: "repo-001", owner: "test-owner", name: "test-repo", default_branch: "main", ...overrides };
+}
+
 function createMockScanRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "scan-001",
@@ -37,12 +41,15 @@ describe("handleScan", () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({ data: scanRow, error: null }),
+          maybeSingle: vi.fn().mockResolvedValue({ data: scanRow, error: null }),
           update: vi.fn((payload: Record<string, unknown>) => {
             capturedUpdates.push(payload);
             return { eq: vi.fn().mockReturnThis() };
           }),
         };
+      }
+      if (table === "cm_repo") {
+        return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: createMockRepoRow(), error: null }) };
       }
       if (table === "cm_finding") {
         return { upsert: vi.fn().mockResolvedValue({ error: null }) };
@@ -69,7 +76,7 @@ describe("handleScan", () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({ data: scanRow, error: null }),
+          maybeSingle: vi.fn().mockResolvedValue({ data: scanRow, error: null }),
           update: vi.fn().mockReturnThis(),
         };
       }
@@ -98,12 +105,15 @@ describe("handleScan", () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({ data: scanRow, error: null }),
+          maybeSingle: vi.fn().mockResolvedValue({ data: scanRow, error: null }),
           update: vi.fn((payload: Record<string, unknown>) => {
             finalUpdate = payload;
             return { eq: vi.fn().mockReturnThis() };
           }),
         };
+      }
+      if (table === "cm_repo") {
+        return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: createMockRepoRow(), error: null }) };
       }
       if (table === "cm_finding") {
         return { upsert: vi.fn() };
@@ -135,12 +145,15 @@ describe("handleScan", () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({ data: scanRow, error: null }),
+          maybeSingle: vi.fn().mockResolvedValue({ data: scanRow, error: null }),
           update: vi.fn((payload: Record<string, unknown>) => {
             finalUpdate = payload;
             return { eq: vi.fn().mockReturnThis() };
           }),
         };
+      }
+      if (table === "cm_repo") {
+        return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: createMockRepoRow(), error: null }) };
       }
       if (table === "cm_finding") {
         return { upsert: vi.fn().mockResolvedValue({ error: null }) };
@@ -167,7 +180,7 @@ describe("handleScan", () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockImplementation(() => {
+          maybeSingle: vi.fn().mockImplementation(() => {
             loadCount++;
             const row = loadCount === 1
               ? createMockScanRow()
@@ -176,6 +189,9 @@ describe("handleScan", () => {
           }),
           update: vi.fn().mockReturnThis(),
         };
+      }
+      if (table === "cm_repo") {
+        return { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: createMockRepoRow(), error: null }) };
       }
       if (table === "cm_finding") {
         return {

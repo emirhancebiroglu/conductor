@@ -1,12 +1,12 @@
 export type AgentRunnerTask = {
   description: string;
   workingDir: string;
-  files?: Array<{ path: string; content: string }>;
+  contextFiles?: Array<{ path: string; label: string }>;
 };
 
 export type AgentRunnerResult = {
-  edits: Array<{ file: string; diff: string }>;
   summary: string;
+  changed: boolean;
   usage: {
     inputTokens: number;
     outputTokens: number;
@@ -20,6 +20,7 @@ export interface AgentRunner {
       provider: string;
       model: string;
       systemPrompt: string;
+      allowedTools: string[];
     },
     task: AgentRunnerTask,
   ): Promise<AgentRunnerResult>;

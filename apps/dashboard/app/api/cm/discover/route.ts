@@ -16,26 +16,42 @@ export async function POST() {
 
     const pipeline = await supabase
       .from("cm_pipeline")
-      .select("id, discovery_name_prefix, discovery_config_path")
+      .select("id, github_owner, github_token_env, discovery_name_prefix, discovery_config_path, branch_exclude_pattern")
       .eq("workspace_id", workspaceId)
-      .maybeSingle() as unknown as { data: { id: string; discovery_name_prefix: string; discovery_config_path: string } | null };
+      .maybeSingle() as unknown as {
+        data: {
+          id: string;
+          github_owner: string;
+          github_token_env: string;
+          discovery_name_prefix: string;
+          discovery_config_path: string;
+          branch_exclude_pattern: string;
+        } | null;
+      };
 
     if (!pipeline.data) {
       return NextResponse.json({ error: "No pipeline configured" }, { status: 400 });
     }
 
-    const token = process.env.GITHUB_TOKEN;
+    const { github_owner, github_token_env, discovery_name_prefix, discovery_config_path, branch_exclude_pattern } = pipeline.data;
+
+    if (!github_owner) {
+      return NextResponse.json({ error: "GitHub owner not configured in pipeline settings" }, { status: 400 });
+    }
+
+    const token = process.env[github_token_env];
     if (!token) {
-      return NextResponse.json({ error: "GITHUB_TOKEN not configured" }, { status: 500 });
+      return NextResponse.json({ error: `Env var ${github_token_env} not set` }, { status: 500 });
     }
 
     const octokit = createOctokit(token);
 
     const repos = await discoverRepos({
       octokit,
-      owner: user.user_metadata?.user_name ?? user.email?.split("@")[0] ?? "unknown",
-      namePrefix: pipeline.data.discovery_name_prefix,
-      configPath: pipeline.data.discovery_config_path,
+      owner: github_owner,
+      namePrefix: discovery_name_prefix,
+      configPath: discovery_config_path,
+      branchExcludePattern: branch_exclude_pattern,
     });
 
     let inserted = 0;
@@ -45,7 +61,7 @@ export async function POST() {
         .upsert({
           pipeline_id: pipeline.data.id,
           workspace_id: workspaceId,
-          owner: user.user_metadata?.user_name ?? "unknown",
+          owner: github_owner,
           name: repo.name,
           default_branch: repo.defaultBranch,
           source: "auto",

@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveWorkspaceKind, resolveWorkspaceId } from "@/lib/workspace";
 
 const CreateScanSchema = z.object({
-  repo_id: z.string().uuid(),
+  repo_id: z.string().uuid().optional(),
+  repo_ids: z.array(z.string().uuid()).optional(),
 });
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("cm_scan")
-      .select("*")
+      .select("*, cm_repo(owner, name, default_branch)")
       .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false });
 
@@ -57,32 +58,46 @@ export async function POST(request: NextRequest) {
     const kind = await getActiveWorkspaceKind();
     const workspaceId = await resolveWorkspaceId(supabase, kind);
 
-    const repo = await supabase
+    const repoIds = parsed.data.repo_ids ?? (parsed.data.repo_id ? [parsed.data.repo_id] : []);
+
+    if (repoIds.length === 0) {
+      return NextResponse.json({ error: "repo_id or repo_ids required" }, { status: 400 });
+    }
+
+    // Validate all repos exist and belong to the workspace
+    const reposResp = await supabase
       .from("cm_repo")
-      .select("id, workspace_id")
-      .eq("id", parsed.data.repo_id)
-      .single() as unknown as { data: { id: string; workspace_id: string } | null; error: { message: string } | null };
+      .select("id, workspace_id, priority")
+      .in("id", repoIds) as unknown as { data: Array<{ id: string; workspace_id: string; priority: number }> | null };
 
-    if (!repo.data || repo.error) {
-      return NextResponse.json({ error: "Repo not found" }, { status: 404 });
+    const repos = reposResp.data ?? [];
+    if (repos.length !== repoIds.length) {
+      return NextResponse.json({ error: "One or more repos not found" }, { status: 404 });
     }
 
-    if (repo.data.workspace_id !== workspaceId) {
-      return NextResponse.json({ error: "Repo belongs to a different workspace" }, { status: 400 });
+    for (const repo of repos) {
+      if (repo.workspace_id !== workspaceId) {
+        return NextResponse.json({ error: "Repo belongs to a different workspace" }, { status: 400 });
+      }
     }
+
+    // Sort by priority (asc = higher priority first)
+    repos.sort((a, b) => a.priority - b.priority);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase.from("cm_scan") as any).insert({
-      repo_id: parsed.data.repo_id,
-      workspace_id: workspaceId,
-      status: "queued",
-      provider: "checkmarx",
-      trigger: "manual",
-    }).select().single();
+    const { data, error } = await (supabase.from("cm_scan") as any).insert(
+      repos.map((repo) => ({
+        repo_id: repo.id,
+        workspace_id: workspaceId,
+        status: "queued",
+        provider: "checkmarx",
+        trigger: "manual",
+      })),
+    ).select();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json({ scan: data }, { status: 201 });
+    return NextResponse.json({ scans: data ?? [] }, { status: 201 });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Internal Server Error";
     return NextResponse.json({ error: msg }, { status: 500 });

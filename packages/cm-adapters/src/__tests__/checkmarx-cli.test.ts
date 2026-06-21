@@ -9,36 +9,62 @@ vi.mock("execa", () => ({
   execa: mockExeca,
 }));
 
+vi.mock("simple-git", () => ({
+  simpleGit: () => ({
+    clone: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
+vi.mock("adm-zip", () => ({
+  default: class {
+    addLocalFolder = vi.fn();
+    toBuffer = vi.fn().mockReturnValue(Buffer.from("fake-zip"));
+  },
+}));
+
+const { mockReadFile } = vi.hoisted(() => ({ mockReadFile: vi.fn() }));
+
+vi.mock("node:fs", () => ({
+  promises: {
+    mkdir: vi.fn().mockResolvedValue(undefined),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    rm: vi.fn().mockResolvedValue(undefined),
+    readFile: mockReadFile,
+  },
+}));
+
 const MOCK_ENV = {
   CX_BASE_URI: "https://checkmarx.example.com",
   CX_TENANT: "test-tenant",
   CX_APIKEY: "test-api-key-12345",
+  GITHUB_TOKEN_WORK: "ghp_test-token",
 };
 
 const MOCK_SCAN_STDOUT = JSON.stringify({ id: "scan-abc-123" });
 
 const MOCK_RESULTS_STDOUT = JSON.stringify({
-  results: {
-    sca: {
-      findings: [
-        {
-          packageName: "lodash",
-          packageVersion: "4.17.20",
-          fixedVersion: "4.17.21",
-          severity: "HIGH",
-          cveId: "CVE-2024-1234",
-          type: "sca",
-        },
-      ],
+  results: [
+    {
+      type: "sca",
+      id: "CVE-2024-1234",
+      severity: "HIGH",
+      description: "Prototype Pollution in lodash",
+      data: {
+        packageName: "lodash",
+        packageVersion: "4.17.20",
+        fixedVersion: "4.17.21",
+        recommendedVersion: "4.17.21",
+        packageIdentifier: "Npm-lodash-4.17.20",
+        cveId: "CVE-2024-1234",
+      },
     },
-    sast: {
-      findings: [],
-    },
-  },
+  ],
 });
 
 beforeEach(() => {
   mockExeca.mockReset();
+  mockReadFile.mockReset();
+  mockReadFile.mockResolvedValue(MOCK_RESULTS_STDOUT);
 });
 
 describe("CheckmarxCliProvider", () => {
@@ -56,7 +82,7 @@ describe("CheckmarxCliProvider", () => {
 
   describe("scan", () => {
     it("calls cx scan create with correct CLI args", async () => {
-      mockExeca.mockResolvedValueOnce({ stdout: MOCK_SCAN_STDOUT });
+      mockExeca.mockResolvedValueOnce({ stdout: MOCK_SCAN_STDOUT, exitCode: 0 });
 
       const provider = new CheckmarxCliProvider(MOCK_ENV);
       const result = await provider.scan({ owner: "test-owner", name: "ms-test-repo" }, "main");
@@ -94,9 +120,9 @@ describe("CheckmarxCliProvider", () => {
     });
 
     it("maps Checkmarx-reported failure to scan_failed outcome", async () => {
-      const execaError = new Error("Checkmarx scan failed");
-      Object.assign(execaError, { exitCode: 1, stderr: "Scan aborted: invalid config" });
-      mockExeca.mockRejectedValueOnce(execaError);
+      // reject:false — execa resolves with non-zero exitCode + no result file → scan_failed
+      mockExeca.mockResolvedValueOnce({ stdout: "", stderr: "Scan aborted: invalid config", exitCode: 1 });
+      mockReadFile.mockRejectedValueOnce(new Error("ENOENT"));
 
       const provider = new CheckmarxCliProvider(MOCK_ENV);
 
@@ -127,7 +153,7 @@ describe("CheckmarxCliProvider", () => {
 
   describe("fetchResults", () => {
     it("calls cx results show with correct CLI args", async () => {
-      mockExeca.mockResolvedValueOnce({ stdout: MOCK_RESULTS_STDOUT });
+      mockExeca.mockResolvedValueOnce({ stdout: MOCK_RESULTS_STDOUT, exitCode: 0 });
 
       const provider = new CheckmarxCliProvider(MOCK_ENV);
       const findings = await provider.fetchResults("scan-abc-123");
@@ -163,9 +189,10 @@ describe("CheckmarxCliProvider", () => {
     });
 
     it("maps Checkmarx-reported failure to scan_failed outcome", async () => {
-      const execaError = new Error("Results not found");
-      Object.assign(execaError, { exitCode: 3, stderr: "Scan ID not found" });
-      mockExeca.mockRejectedValueOnce(execaError);
+      // reject:false means execa resolves with exitCode ≠ 0 instead of throwing
+      mockExeca.mockResolvedValueOnce({ stdout: "", stderr: "Scan ID not found", exitCode: 3 });
+      // readFile throws → falls to exitCode check → scan_failed
+      mockReadFile.mockRejectedValueOnce(new Error("ENOENT"));
 
       const provider = new CheckmarxCliProvider(MOCK_ENV);
 
@@ -194,7 +221,7 @@ describe("CheckmarxCliProvider", () => {
     });
 
     it("parses JSON results into CmFinding[]", async () => {
-      mockExeca.mockResolvedValueOnce({ stdout: MOCK_RESULTS_STDOUT });
+      mockExeca.mockResolvedValueOnce({ stdout: MOCK_RESULTS_STDOUT, exitCode: 0 });
 
       const provider = new CheckmarxCliProvider(MOCK_ENV);
       const findings = await provider.fetchResults("scan-abc-123");

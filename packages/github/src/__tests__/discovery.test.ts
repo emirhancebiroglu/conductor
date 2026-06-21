@@ -6,32 +6,47 @@ function mockOctokit(
 ) {
   return {
     rest: {
-    repos: {
-      listForOrg: ({ page }: { page: number; per_page: number }) => {
-        if (page === 1) {
-          return {
-            data: repos.map((r) => ({ name: r.name, default_branch: r.defaultBranch })),
-          };
-        }
-        return { data: [] };
-      },
-      getContent: ({
-        owner: _owner,
-        repo,
-        path: _path,
-        ref: _ref,
-      }: {
-        owner: string;
-        repo: string;
-        path: string;
-        ref: string;
-      }) => {
-        const found = repos.find((r) => r.name === repo);
-        if (found && found.hasConfig) {
-          return { data: { type: "file", content: "", sha: "abc123" } };
-        }
-        throw new Error("Not found");
-      },
+      repos: {
+        listForOrg: ({ page }: { page: number; per_page: number }) => {
+          if (page === 1) {
+            return {
+              data: repos.map((r) => ({ name: r.name, default_branch: r.defaultBranch })),
+            };
+          }
+          return { data: [] };
+        },
+        getContent: ({
+          owner: _owner,
+          repo,
+          path: _path,
+          ref: _ref,
+        }: {
+          owner: string;
+          repo: string;
+          path: string;
+          ref: string;
+        }) => {
+          const found = repos.find((r) => r.name === repo);
+          if (found && found.hasConfig) {
+            return { data: { type: "file", content: "", sha: "abc123" } };
+          }
+          throw new Error("Not found");
+        },
+        listBranches: ({
+          repo,
+          page,
+        }: {
+          owner: string;
+          repo: string;
+          per_page: number;
+          page: number;
+        }) => {
+          if (page === 1) {
+            const branch = repos.find((r) => r.name === repo)?.defaultBranch ?? "main";
+            return { data: [{ name: branch }] };
+          }
+          return { data: [] };
+        },
       },
     },
   };

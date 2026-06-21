@@ -69,13 +69,15 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     if (parsedBody.data.capabilities !== undefined) updatePayload.capabilities = parsedBody.data.capabilities;
     if (parsedBody.data.available !== undefined) updatePayload.available = parsedBody.data.available;
 
-    // why: Supabase client typing resolves table rows to never in this setup, so we cast the builder to any to allow updating and cast the result to the known DB row types
+    // why: Supabase client typing resolves table rows to never in this setup; as any is the only escape hatch
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     const { data: updatedData, error: updateError } = (await (supabase
       .from("provider_models") as any)
       .update(updatePayload)
       .eq("id", id)
       .select()
       .single()) as unknown as { data: ProviderModelRow | null; error: { message: string } | null };
+    /* eslint-enable @typescript-eslint/no-explicit-any */
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
@@ -98,9 +100,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
 
     const validated = ProviderModelSchema.parse(mapped);
     return NextResponse.json({ model: validated });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error.message || "Internal Server Error" },
+      { error: error instanceof Error ? error.message : "Internal Server Error" },
       { status: 500 }
     );
   }
@@ -136,20 +138,22 @@ export async function DELETE(_request: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: "Model not found" }, { status: 404 });
     }
 
-    // why: Supabase client typing resolves table rows to never in this setup, so we cast the builder to any to allow updating and cast the result to the known DB row types
+    // why: Supabase client typing resolves table rows to never in this setup; as any is the only escape hatch
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     const { error: deleteError } = (await (supabase
       .from("provider_models") as any)
       .delete()
       .eq("id", id)) as unknown as { error: { message: string } | null };
+    /* eslint-enable @typescript-eslint/no-explicit-any */
 
     if (deleteError) {
       return NextResponse.json({ error: deleteError.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error.message || "Internal Server Error" },
+      { error: error instanceof Error ? error.message : "Internal Server Error" },
       { status: 500 }
     );
   }

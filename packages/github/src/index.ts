@@ -8,5 +8,8 @@ export {
   listRepos,
   fileExists,
   discoverRepos,
+  listBranches,
+  getBranchAheadCount,
+  selectBestBranch,
 } from "./client.js";
 export type { DiscoverReposOptions } from "./client.js";

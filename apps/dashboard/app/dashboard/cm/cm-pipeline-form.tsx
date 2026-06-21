@@ -18,8 +18,11 @@ type PipelineData = {
   id?: string;
   enabled: boolean;
   cron: string;
+  github_owner: string;
+  github_token_env: string;
   discovery_name_prefix: string;
   discovery_config_path: string;
+  branch_exclude_pattern: string;
   severity_threshold: string[];
   sca_test_policy: string;
   fix_branch: string;
@@ -32,8 +35,11 @@ type PipelineData = {
 const DEFAULT_PIPELINE: PipelineData = {
   enabled: false,
   cron: "0 0 * * *",
+  github_owner: "",
+  github_token_env: "GITHUB_TOKEN_WORK",
   discovery_name_prefix: "ms",
   discovery_config_path: ".github/checkmarx_scan.yml",
+  branch_exclude_pattern: "*kubernetes*,*k8s*",
   severity_threshold: ["CRITICAL", "HIGH"],
   sca_test_policy: "skip-minor",
   fix_branch: "checkmarx-auto",
@@ -47,13 +53,6 @@ const SEVERITY_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 function parseCronExpression(cron: string): string {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return "Invalid cron expression";
-  const labels: Record<number, string> = {
-    0: "minute", 1: "hour", 2: "day of month", 3: "month", 4: "day of week",
-  };
-  const named: Record<string, string> = {
-    "0": "at :00", "*/5": "every 5", "*/10": "every 10", "*/15": "every 15", "*/30": "every 30",
-    "*": "every", "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu", "5": "Fri", "6": "Sat", "7": "Sun",
-  };
   if (parts[0] === "0" && parts[1] === "0" && parts[2] === "*" && parts[3] === "*" && parts[4] === "*") return "Daily at midnight";
   if (parts[0] === "0" && parts[2] === "*" && parts[3] === "*" && parts[4] === "*") return `Daily at ${parts[1]}:00`;
   return `Cron: ${cron}`;
@@ -80,8 +79,11 @@ export function CmPipelineForm() {
             id: json.id,
             enabled: json.enabled ?? false,
             cron: json.cron ?? "0 0 * * *",
+            github_owner: json.github_owner ?? "",
+            github_token_env: json.github_token_env ?? "GITHUB_TOKEN_WORK",
             discovery_name_prefix: json.discovery_name_prefix ?? "ms",
             discovery_config_path: json.discovery_config_path ?? ".github/checkmarx_scan.yml",
+            branch_exclude_pattern: json.branch_exclude_pattern ?? "*kubernetes*,*k8s*",
             severity_threshold: json.severity_threshold ?? ["CRITICAL", "HIGH"],
             sca_test_policy: json.sca_test_policy ?? "skip-minor",
             fix_branch: json.fix_branch ?? "checkmarx-auto",
@@ -146,13 +148,13 @@ export function CmPipelineForm() {
 
   return (
     <div className="pipeline-form">
-      {/* Enable toggle */}
+      {/* Auto-mode toggle */}
       <div className="pf-toggle-row">
         <div>
           <span className="pf-toggle-label" style={{ color: data.enabled ? "#34d399" : "var(--text-secondary)" }}>
-            {data.enabled ? "Pipeline Active" : "Pipeline Disabled"}
+            {data.enabled ? "Auto-mode Active" : "Auto-mode Disabled"}
           </span>
-          <p className="pf-toggle-desc">Master switch — when disabled, no scheduled scans run.</p>
+          <p className="pf-toggle-desc">When enabled, scans run automatically per the cron schedule. Default: OFF (manual trigger only).</p>
         </div>
         <Switch checked={data.enabled} onCheckedChange={(v) => update("enabled", v)} />
       </div>
@@ -161,7 +163,7 @@ export function CmPipelineForm() {
 
       {/* Cron */}
       <div className="pf-field">
-        <Label className="pf-label">Schedule (Cron)</Label>
+        <Label className="pf-label">Auto-scan Schedule (Cron)</Label>
         <Input
           value={data.cron}
           onChange={(e) => update("cron", e.target.value)}
@@ -217,6 +219,22 @@ export function CmPipelineForm() {
 
       <div className="pf-rule" />
 
+      {/* GitHub */}
+      <div className="pf-grid-2">
+        <div className="pf-field">
+          <Label className="pf-label">GitHub Owner (Org or User)</Label>
+          <Input value={data.github_owner} onChange={(e) => update("github_owner", e.target.value)} className="pf-input" placeholder="Toyota-Europe" />
+          <p className="pf-hint">GitHub org or user whose repos are scanned.</p>
+        </div>
+        <div className="pf-field">
+          <Label className="pf-label">GitHub Token Env Var</Label>
+          <Input value={data.github_token_env} onChange={(e) => update("github_token_env", e.target.value)} className="pf-input" placeholder="GITHUB_TOKEN_WORK" />
+          <p className="pf-hint">Name of the env var holding the GitHub PAT (e.g. GITHUB_TOKEN_WORK, GITHUB_TOKEN_PERSONAL).</p>
+        </div>
+      </div>
+
+      <div className="pf-rule" />
+
       {/* Discovery */}
       <div className="pf-grid-2">
         <div className="pf-field">
@@ -229,6 +247,16 @@ export function CmPipelineForm() {
           <Input value={data.discovery_config_path} onChange={(e) => update("discovery_config_path", e.target.value)} className="pf-input" />
           <p className="pf-hint">Path to config file that marks a repo as scan-ready.</p>
         </div>
+      </div>
+      <div className="pf-field" style={{ marginTop: "12px" }}>
+        <Label className="pf-label">Branch Exclude Pattern</Label>
+        <Input
+          value={data.branch_exclude_pattern}
+          onChange={(e) => update("branch_exclude_pattern", e.target.value)}
+          className="pf-input"
+          placeholder="*kubernetes*,*k8s*"
+        />
+        <p className="pf-hint">Comma-separated patterns. Branches matching any pattern are skipped during branch selection.</p>
       </div>
 
       <div className="pf-rule" />

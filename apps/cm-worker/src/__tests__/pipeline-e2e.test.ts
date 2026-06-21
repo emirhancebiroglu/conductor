@@ -32,18 +32,40 @@ function createMockDb() {
     cm_pipeline: [],
     cm_finding: [],
     cm_report: [],
+    agent_config: [],
+    runs: [],
+    usage_log: [],
   };
 
   const capture: Array<{ table: string; payload: Record<string, unknown> }> = [];
 
-  function makeQueryBuilder(table: string) {
-    return {
+  function makeQueryBuilder(table: string, filters?: Array<{ col: string; val: unknown }>) {
+    const f: Array<{ col: string; val: unknown }> = filters ?? [];
+    const self: Record<string, unknown> = {
       select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
+      eq: vi.fn((col: string, val: unknown) => {
+        f.push({ col, val });
+        return self;
+      }),
+      in: vi.fn().mockImplementation(() => {
+        const items = db[table] ?? [];
+        return Promise.resolve({ data: items, error: null });
+      }),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       single: vi.fn().mockImplementation(() => {
-        const items = db[table] ?? [];
+        let items = db[table] ?? [];
+        for (const filter of f) {
+          items = items.filter((row) => (row as Record<string, unknown>)[filter.col] === filter.val);
+        }
+        const item = items[items.length - 1] ?? null;
+        return Promise.resolve({ data: item, error: item ? null : { message: "not found" } });
+      }),
+      maybeSingle: vi.fn().mockImplementation(() => {
+        let items = db[table] ?? [];
+        for (const filter of f) {
+          items = items.filter((row) => (row as Record<string, unknown>)[filter.col] === filter.val);
+        }
         const item = items[items.length - 1] ?? null;
         return Promise.resolve({ data: item, error: item ? null : { message: "not found" } });
       }),
@@ -55,18 +77,24 @@ function createMockDb() {
         capture.push({ table, payload });
         return { eq: vi.fn().mockReturnThis() };
       }),
-      insert: vi.fn(),
+      insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+        const row = { id: `${table}-row-${Date.now()}`, ...payload };
+        (db[table] ?? []).push(row);
+        capture.push({ table, payload });
+        return makeQueryBuilder(table);
+      }),
       upsert: vi.fn((payload: Record<string, unknown>) => {
         (db.cm_finding ?? []).push(payload);
         capture.push({ table, payload });
         return { error: null };
       }),
     };
+    return self;
   }
 
   const supabase = {
     from: vi.fn((table: string) => {
-      if (["cm_scan", "cm_repo", "cm_pipeline", "cm_finding"].includes(table)) {
+      if (["cm_scan", "cm_repo", "cm_pipeline", "cm_finding", "agent_config", "runs", "usage_log"].includes(table)) {
         return makeQueryBuilder(table);
       }
       if (table === "cm_report") {
@@ -111,7 +139,14 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
 
     try {
       seed("cm_pipeline", [
-        { id: pipelineId, workspace_id: wsId, enabled: true, cron: "0 0 * * *", max_fix_attempts: 2 },
+        { id: pipelineId, workspace_id: wsId, enabled: true, cron: "0 0 * * *", max_fix_attempts: 2, fix_branch: "checkmarx-auto", report_dir: reportDir, sca_test_policy: "skip-minor", severity_threshold: ["CRITICAL", "HIGH"] },
+      ]);
+
+      seed("agent_config", [
+        { id: "agent-planner", agent_name: "cm-fix-planner", display_name: "CM Fix Planner", provider: "anthropic", model: "claude-sonnet-4-6", system_prompt: "Triage findings.", allowed_tools: [] },
+        { id: "agent-verifier", agent_name: "cm-fix-verifier", display_name: "CM Fix Verifier", provider: "anthropic", model: "claude-sonnet-4-6", system_prompt: "Verify fixes.", allowed_tools: [] },
+        { id: "agent-sca", agent_name: "cm-sca-agent", display_name: "CM SCA Agent", provider: "anthropic", model: "claude-sonnet-4-6", system_prompt: "Fix deps.", allowed_tools: [] },
+        { id: "agent-sast", agent_name: "cm-sast-agent", display_name: "CM SAST Agent", provider: "anthropic", model: "claude-sonnet-4-6", system_prompt: "Fix code.", allowed_tools: [] },
       ]);
 
       seed("cm_repo", [
@@ -136,45 +171,80 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
       const findings = getAll("cm_finding");
       expect(findings.length).toBeGreaterThan(0);
 
-      // === STAGE 2: Fix handler ===
+      // === STAGE 2: Fix handler (now includes rescan + PR + report inline) ===
+      // Configure agent runner to return PASS: for the verifier
+      const passingAgentRunner: import("@conductor/cm-adapters").AgentRunner = {
+        run: vi.fn().mockImplementation(async (agentConfig, task) => {
+          if (agentConfig.agentName === "cm-fix-verifier") {
+            return {
+              summary: "PASS: build ok, all tests passed",
+              changed: false,
+              usage: { inputTokens: 50, outputTokens: 10 },
+            };
+          }
+          // Planner: return a valid plan
+          if (agentConfig.agentName === "cm-fix-planner") {
+            const findingsJson = task.description.match(/"fingerprint": "([^"]+)"/g) ?? [];
+            const fingerprints = findingsJson.map((s: string) => s.replace(/"fingerprint": "/, "").replace(/"$/, ""));
+            return {
+              summary: JSON.stringify({
+                findings: fingerprints.map((fp: string) => ({
+                  fingerprint: fp,
+                  strategy: "code-fix",
+                  category: "backend",
+                  reachable: true,
+                  exploitable: true,
+                  falsePositive: false,
+                  priority: 8,
+                  confidence: 0.8,
+                  notes: "test fix",
+                })),
+              }),
+              changed: true,
+              usage: { inputTokens: 100, outputTokens: 50 },
+            };
+          }
+          // SCA/SAST agents: report success
+          return {
+            summary: `Fixed: ${task.description.slice(0, 80)}`,
+            changed: true,
+            usage: { inputTokens: 100, outputTokens: 50 },
+          };
+        }),
+      };
+
+      // Mock scanProvider to return clean rescan
+      const rescanProvider: ScanProvider = {
+        scan: vi.fn().mockImplementation(async (_repo, branch) => {
+          if (branch === "checkmarx-fix") {
+            return { externalScanId: "rescan-clean", findings: [] };
+          }
+          // First scan returns findings
+          return scanProvider.scan(_repo, branch);
+        }),
+        fetchResults: vi.fn(),
+      };
+
       const fixTmpDir = await mkdtemp(join(tmpdir(), "cm-e2e-fix-"));
+      const pushFn = vi.fn().mockResolvedValue(undefined);
       const mockGitOps = {
         cloneToTemp: vi.fn().mockResolvedValue(fixTmpDir),
         createBranch: vi.fn().mockResolvedValue(undefined),
         commitAll: vi.fn().mockResolvedValue(undefined),
-        push: vi.fn().mockResolvedValue(undefined),
+        push: pushFn,
+        pushBranch: pushFn,
         cleanup: vi.fn().mockResolvedValue(undefined),
       };
 
-      await handleFix(supabase as never, scanProvider, agentRunner, scanId, mockGitOps as never);
+      mockPullsCreate.mockResolvedValue({
+        data: { html_url: "https://github.com/test/ms-test-repo/pull/1" },
+      });
+
+      await handleFix(supabase as never, rescanProvider, passingAgentRunner, scanId, mockGitOps as never);
       await rm(fixTmpDir, { recursive: true, force: true }).catch(() => {});
 
       scan = getLatest("cm_scan");
-      expect(scan?.status).toBe("fixed");
-
-      // === STAGE 3: Rescan (clean) ===
-      const cleanProvider: ScanProvider = {
-        scan: vi.fn().mockResolvedValue({ externalScanId: "rescan-clean" }),
-        fetchResults: vi.fn().mockResolvedValue([]),
-      };
-
-      await handleRescan(supabase as never, cleanProvider, scanId);
-
-      scan = getLatest("cm_scan");
       expect(scan?.status).toBe("verified");
-
-      // === STAGE 4: Push + PR ===
-      await handlePushAndPR(supabase as never, scanId, "https://github.com/test/ms-test-repo.git", mockGitOps as never);
-
-      scan = getLatest("cm_scan");
-      expect(scan?.status).toBe("pr_opened");
-      expect(scan?.pr_url).toBe("https://github.com/test/ms-test-repo/pull/1");
-
-      // === STAGE 5: Report ===
-      await handleReport(supabase as never, scanId, reportDir);
-
-      scan = getLatest("cm_scan");
-      expect(scan?.status).toBe("done");
       expect(scan?.report_path).toBeTruthy();
 
       const reports = getAll("cm_report");
@@ -183,7 +253,7 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
       // === Replay check (idempotency) ===
       await handleScan(supabase as never, scanProvider, { scanId });
       scan = getLatest("cm_scan");
-      expect(scan?.status).toBe("done");
+      expect(scan?.status).toBe("verified");
 
     } finally {
       await rm(reportDir, { recursive: true, force: true }).catch(() => {});

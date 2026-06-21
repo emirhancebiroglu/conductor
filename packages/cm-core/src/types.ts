@@ -73,6 +73,7 @@ export const CmPipelineSchema = z.object({
   reportDir: z.string(),
   retryCooldownSeconds: z.number().int(),
   maxFixAttempts: z.number().int(),
+  branchExcludePattern: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -92,6 +93,7 @@ export const CmPipelineRowSchema = z.object({
   report_dir: z.string(),
   retry_cooldown_seconds: z.number().int(),
   max_fix_attempts: z.number().int(),
+  branch_exclude_pattern: z.string(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -187,6 +189,15 @@ export type CmScanRow = z.infer<typeof CmScanRowSchema>;
 // Table: cm_finding
 // ---------------------------------------------------------------------------
 
+export const CmTaintNodeSchema = z.object({
+  fileName: z.string(),
+  line: z.number().int(),
+  column: z.number().int().optional(),
+  name: z.string().optional(),
+  fullName: z.string().optional(),
+});
+export type CmTaintNode = z.infer<typeof CmTaintNodeSchema>;
+
 export const CmFindingSchema = z.object({
   id: z.string().uuid(),
   scanId: z.string().uuid(),
@@ -204,6 +215,8 @@ export const CmFindingSchema = z.object({
   fixStatus: CmFixStatusSchema,
   fixAttempts: z.number().int(),
   fixNotes: z.string().nullable(),
+  description: z.string().nullable(),
+  taintFlow: z.array(CmTaintNodeSchema).nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -226,6 +239,8 @@ export const CmFindingRowSchema = z.object({
   fix_status: z.string(),
   fix_attempts: z.number().int(),
   fix_notes: z.string().nullable(),
+  description: z.string().nullable(),
+  taint_flow: z.array(CmTaintNodeSchema).nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -256,6 +271,39 @@ export const CmReportRowSchema = z.object({
 export type CmReportRow = z.infer<typeof CmReportRowSchema>;
 
 // ---------------------------------------------------------------------------
+// Fix plan (emitted by cm-fix-planner agent, persisted to cm_finding.fix_notes)
+// ---------------------------------------------------------------------------
+
+export const CmFixStrategySchema = z.enum(["upgrade", "mitigate", "code-fix", "skip", "needs-human"]);
+export type CmFixStrategy = z.infer<typeof CmFixStrategySchema>;
+
+export const CmMitigationKindSchema = z.enum(["override", "resolution", "dependency-management", "alias", "replacement", "none"]);
+export type CmMitigationKind = z.infer<typeof CmMitigationKindSchema>;
+
+export const CmCategorySchema = z.enum(["frontend", "backend", "shared", "infra"]);
+export type CmCategory = z.infer<typeof CmCategorySchema>;
+
+export const CmFixPlanItemSchema = z.object({
+  fingerprint: z.string(),
+  strategy: CmFixStrategySchema,
+  category: CmCategorySchema,
+  reachable: z.boolean(),
+  exploitable: z.boolean(),
+  falsePositive: z.boolean().default(false),
+  mitigationKind: CmMitigationKindSchema.optional(),
+  priority: z.number().int().min(1).max(10),
+  confidence: z.number().min(0).max(1),
+  notes: z.string(),
+  targetVersion: z.string().optional(),
+});
+export type CmFixPlanItem = z.infer<typeof CmFixPlanItemSchema>;
+
+export const CmFixPlanSchema = z.object({
+  findings: z.array(CmFixPlanItemSchema),
+});
+export type CmFixPlan = z.infer<typeof CmFixPlanSchema>;
+
+// ---------------------------------------------------------------------------
 // Snake ↔ Camel mappers
 // ---------------------------------------------------------------------------
 
@@ -274,6 +322,7 @@ export function cmPipelineRowToEntity(row: CmPipelineRow): CmPipeline {
     reportDir: row.report_dir,
     retryCooldownSeconds: row.retry_cooldown_seconds,
     maxFixAttempts: row.max_fix_attempts,
+    branchExcludePattern: row.branch_exclude_pattern,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -294,6 +343,7 @@ export function cmPipelineEntityToRow(entity: CmPipeline): CmPipelineRow {
     report_dir: entity.reportDir,
     retry_cooldown_seconds: entity.retryCooldownSeconds,
     max_fix_attempts: entity.maxFixAttempts,
+    branch_exclude_pattern: entity.branchExcludePattern,
     created_at: entity.createdAt,
     updated_at: entity.updatedAt,
   };
@@ -399,6 +449,8 @@ export function cmFindingRowToEntity(row: CmFindingRow): CmFinding {
     fixStatus: row.fix_status as CmFixStatus,
     fixAttempts: row.fix_attempts,
     fixNotes: row.fix_notes,
+    description: row.description,
+    taintFlow: row.taint_flow,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -422,6 +474,8 @@ export function cmFindingEntityToRow(entity: CmFinding): CmFindingRow {
     fix_status: entity.fixStatus,
     fix_attempts: entity.fixAttempts,
     fix_notes: entity.fixNotes,
+    description: entity.description,
+    taint_flow: entity.taintFlow,
     created_at: entity.createdAt,
     updated_at: entity.updatedAt,
   };

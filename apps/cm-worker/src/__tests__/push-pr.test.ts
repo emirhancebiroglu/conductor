@@ -17,11 +17,13 @@ vi.mock("@octokit/rest", () => ({
 import { handlePushAndPR } from "../handlers/push-pr.js";
 
 function createMockGitOps() {
+  const push = vi.fn().mockResolvedValue(undefined);
   return {
     cloneToTemp: vi.fn().mockResolvedValue("/tmp/workdir"),
     createBranch: vi.fn().mockResolvedValue(undefined),
     commitAll: vi.fn().mockResolvedValue(undefined),
-    push: vi.fn().mockResolvedValue(undefined),
+    push,
+    pushBranch: push,
     cleanup: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -74,7 +76,14 @@ describe("handlePushAndPR", () => {
           return {
             select: vi.fn().mockReturnThis(),
             eq: vi.fn().mockReturnThis(),
-            single: vi.fn().mockResolvedValue({ data: createMockRepoRow(), error: null }),
+            single: vi.fn().mockResolvedValue({ data: createMockRepoRow({ pipeline_id: "pipe-001" }), error: null }),
+          };
+        }
+        if (table === "cm_pipeline") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { fix_branch: "checkmarx-auto" }, error: null }),
           };
         }
         return {};
@@ -122,7 +131,14 @@ describe("handlePushAndPR", () => {
           return {
             select: vi.fn().mockReturnThis(),
             eq: vi.fn().mockReturnThis(),
-            single: vi.fn().mockResolvedValue({ data: createMockRepoRow(), error: null }),
+            single: vi.fn().mockResolvedValue({ data: createMockRepoRow({ pipeline_id: "pipe-001" }), error: null }),
+          };
+        }
+        if (table === "cm_pipeline") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { fix_branch: "checkmarx-auto" }, error: null }),
           };
         }
         return {};
