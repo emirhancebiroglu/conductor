@@ -6,7 +6,7 @@ import { getActiveWorkspaceKind, resolveWorkspaceId } from "@/lib/workspace";
 const CreateRepoSchema = z.object({
   owner: z.string().min(1),
   name: z.string().min(1),
-  default_branch: z.string().default("main"),
+  default_branch: z.string().default("uat"),
   source: z.enum(["auto", "manual"]).default("manual"),
   priority: z.number().int().default(100),
 });

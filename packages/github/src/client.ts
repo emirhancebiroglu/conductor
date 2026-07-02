@@ -288,7 +288,7 @@ export async function discoverRepos(
     owner,
     namePrefix = "ms",
     configPath = ".github/checkmarx_scan.yml",
-    branchExcludePattern = "*kubernetes*,*k8s*",
+    branchExcludePattern: _branchExcludePattern = "*kubernetes*,*k8s*",
   } = options;
 
   const allRepos = await listRepos(octokit, owner);
@@ -304,15 +304,7 @@ export async function discoverRepos(
             const hasConfig = await fileExists(octokit, owner, repo.name, configPath);
             if (!hasConfig) return null;
 
-            const bestBranch = await selectBestBranch(
-              octokit,
-              owner,
-              repo.name,
-              repo.defaultBranch,
-              branchExcludePattern,
-            );
-
-            return { name: repo.name, defaultBranch: bestBranch };
+            return { name: repo.name, defaultBranch: "uat" };
           },
           semState,
           CONCURRENCY,

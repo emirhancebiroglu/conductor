@@ -75,7 +75,7 @@ export async function handleScan(
   }
 
   // Use repo's default_branch; fallback to branch_scanned recorded on the scan row
-  const branch = scanRow.branch_scanned ?? repoResp.data.default_branch ?? "main";
+  const branch = scanRow.branch_scanned ?? repoResp.data.default_branch ?? "uat";
 
   try {
     const repo = { owner: repoResp.data.owner, name: repoResp.data.name };

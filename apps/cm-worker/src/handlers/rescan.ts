@@ -7,6 +7,7 @@ type CmScanRow = {
   repo_id: string;
   workspace_id: string;
   status: string;
+  branch_scanned: string | null;
 };
 
 type CmPipelineRow = {
@@ -40,10 +41,22 @@ export async function handleRescan(
     .update({ status: "rescanning", current_step: "Re-scanning after fixes..." })
     .eq("id", scanId);
 
+  const repoResp = await supabase
+    .from("cm_repo")
+    .select("owner, name, default_branch")
+    .eq("id", scan.repo_id)
+    .single() as unknown as { data: { owner: string; name: string; default_branch: string } | null };
+
+  if (!repoResp.data) {
+    throw new Error(`cm_repo not found for scan ${scanId}`);
+  }
+
+  const branch = scan.branch_scanned ?? repoResp.data.default_branch ?? "uat";
+
   try {
     const { externalScanId } = await scanProvider.scan(
-      { owner: scan.repo_id, name: "" },
-      "main",
+      { owner: repoResp.data.owner, name: repoResp.data.name },
+      branch,
     );
 
     const findings = await scanProvider.fetchResults(externalScanId);
