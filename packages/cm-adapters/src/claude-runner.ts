@@ -223,9 +223,8 @@ function extractTokens(output: string): { inputTokens: number; outputTokens: num
 }
 
 function buildSummary(output: string): string {
-  const lines = output.trim().split("\n").filter((l) => l.trim());
-  // Last non-empty 3 lines as summary
-  return lines.slice(-3).join(" ").slice(0, 500) || "(no output)";
+  const trimmed = output.trim();
+  return trimmed || "(no output)";
 }
 
 // ---------------------------------------------------------------------------

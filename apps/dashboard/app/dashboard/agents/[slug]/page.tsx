@@ -77,6 +77,7 @@ export default async function AgentDetailPage({ params }: Props) {
     categoryId: row.category_id,
     enabled: row.enabled,
     laneOverride: row.lane_override,
+    allowedTools: row.allowed_tools ?? [],
     order: row.order,
     createdAt: safeDate(row.created_at),
     updatedAt: safeDate(row.updated_at),

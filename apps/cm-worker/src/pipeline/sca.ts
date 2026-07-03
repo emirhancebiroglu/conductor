@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentRunner } from "@conductor/cm-adapters";
 import type { CmFinding } from "@conductor/cm-core";
+import { CmBatchFixResultSchema } from "@conductor/cm-core";
 import { dispatchAgent } from "./dispatch.js";
 import type { PlannerResult } from "./planner.js";
 
@@ -37,125 +38,12 @@ export function labelUpgradeImpact(current: string, target: string): UpgradeImpa
 }
 
 // ---------------------------------------------------------------------------
-// Real SCA fix via agent
+// Real SCA fix via agent — one batched dispatch per fix attempt, not one
+// dispatch per finding (spawn count must not scale with finding count).
 // ---------------------------------------------------------------------------
 
-type ScaFixOptions = {
-  supabase: SupabaseClient;
-  agentRunner: AgentRunner;
-  scanId: string;
-  workspaceId: string;
-  finding: CmFinding;
-  policy: ScaTestPolicy;
-  workingDir: string;
-  runConfig: { buildCommand?: string; testCommand?: string };
-  planItem?: PlannerResult["items"][number] | undefined;
-};
-
-export async function processScaFinding(opts: ScaFixOptions): Promise<ScaFixResult> {
-  const { supabase, agentRunner, scanId, workspaceId, finding, policy, workingDir, runConfig, planItem } = opts;
-  const currentVer = finding.currentVersion ?? "0.0.0";
-  const targetVer = planItem?.targetVersion ?? finding.fixedVersion ?? currentVer;
-  const impact = labelUpgradeImpact(currentVer, targetVer);
-
-  // Under skip-minor policy, skip MINOR findings without agent dispatch
-  if (policy === "skip-minor" && impact === "MINOR") {
-    await supabase
-      .from("cm_finding")
-      .update({ fix_status: "skipped", fix_notes: "MINOR upgrade skipped per sca_test_policy" })
-      .eq("id", finding.id);
-
-    return { finding, impact, tested: false, fixStatus: "skipped" };
-  }
-
-  // Mark as fixing
-  await supabase
-    .from("cm_finding")
-    .update({ fix_status: "fixing", fix_attempts: (finding.fixAttempts ?? 0) + 1 })
-    .eq("id", finding.id);
-
-  const buildCmd = runConfig.buildCommand ?? "";
-  const testCmd = runConfig.testCommand ?? "";
-  const notes = planItem?.notes ?? "";
-  const strategy = planItem?.strategy ?? "upgrade";
-  const mitigationKind = planItem?.mitigationKind;
-
-  const description = strategy === "mitigate"
-    ? `Mitigate SCA vulnerability: no clean upgrade available.
-
-Package: ${finding.package ?? "unknown"}
-Current version: ${currentVer}
-Severity: ${finding.severity}
-CVE/Rule: ${finding.rule ?? "unknown"}
-Planner notes: ${notes}
-Mitigation kind: ${mitigationKind ?? "none"}
-
-Instructions:
-1. Use the planner's mitigation strategy (${mitigationKind}). Apply it the way a human would to close the finding.
-2. ${mitigationKind === "override" ? "Add/extend npm overrides pinning the transitive dep to a patched version." : ""}
-   ${mitigationKind === "resolution" ? "Add/extend yarn resolutions." : ""}
-   ${mitigationKind === "dependency-management" ? "Pin via Maven <dependencyManagement> or Gradle resolutionStrategy." : ""}
-   ${mitigationKind === "alias" ? "Alias the dependency to a patched build." : ""}
-   ${mitigationKind === "replacement" ? "Swap the abandoned package for a maintained drop-in equivalent and update imports minimally." : ""}
-3. Run the build command to verify: ${buildCmd || "(none configured — skip build verification)"}
-4. Run the test command to verify: ${testCmd || "(none configured — skip test verification)"}
-5. If build or tests fail, revert the change and report failure.
-6. NEVER fake a fix — do what actually closes the finding.
-
-Working directory: ${workingDir}`
-    : `Fix SCA vulnerability: upgrade dependency to resolve a security finding.
-
-Package: ${finding.package ?? "unknown"}
-Current version: ${currentVer}
-Target version: ${targetVer}
-Severity: ${finding.severity}
-CVE/Rule: ${finding.rule ?? "unknown"}
-Impact: ${impact}
-Planner notes: ${notes}
-
-Instructions:
-1. Use context7 to look up the target version's changelog and API changes.
-2. Use Tavily to research any breaking changes or known issues with the upgrade.
-3. Find all manifest files (package.json, pom.xml, build.gradle, requirements.txt, etc.) that declare this dependency.
-4. Apply the version upgrade to ${targetVer} in the manifest(s).
-5. If the new API has breaking changes, update the call sites accordingly.
-6. Run the build command to verify: ${buildCmd || "(none configured — skip build verification)"}
-7. Run the test command to verify: ${testCmd || "(none configured — skip test verification)"}
-8. If build or tests fail, revert the change and report failure.
-
-Working directory: ${workingDir}`;
-
-  const task = {
-    description,
-    workingDir,
-  };
-
-  try {
-    const result = await dispatchAgent(
-      supabase, agentRunner, "cm-sca-agent", scanId, workspaceId, task,
-    );
-
-    const fixStatus = result.changed ? "fixed" : "failed";
-    await supabase
-      .from("cm_finding")
-      .update({
-        fix_status: fixStatus,
-        fix_notes: result.summary.slice(0, 1000),
-        upgrade_impact: impact,
-      })
-      .eq("id", finding.id);
-
-    return { finding, impact, tested: true, fixStatus };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await supabase
-      .from("cm_finding")
-      .update({ fix_status: "failed", fix_notes: msg.slice(0, 500) })
-      .eq("id", finding.id);
-
-    return { finding, impact, tested: true, fixStatus: "failed" };
-  }
-}
+type PlanItem = PlannerResult["items"][number];
+type DispatchItem = { finding: CmFinding; planItem: PlanItem | undefined; impact: UpgradeImpact };
 
 type ScaFindingsOptions = {
   supabase: SupabaseClient;
@@ -169,26 +57,170 @@ type ScaFindingsOptions = {
   planItems: PlannerResult["items"];
 };
 
-export async function processScaFindings(opts: ScaFindingsOptions): Promise<ScaFixResult[]> {
-  const { supabase, findings, planItems } = opts;
-  const results: ScaFixResult[] = [];
-  const planMap = new Map(planItems.map((i) => [i.fingerprint, i]));
+function describeFinding({ finding, planItem, impact }: DispatchItem): string {
+  const strategy = planItem?.strategy ?? "upgrade";
+  const notes = planItem?.notes ?? "";
+
+  if (strategy === "mitigate") {
+    return `- fingerprint: ${finding.fingerprint}
+  package: ${finding.package ?? "unknown"} v${finding.currentVersion ?? "?"} | severity: ${finding.severity} | rule: ${finding.rule ?? "unknown"}
+  strategy: mitigate (${planItem?.mitigationKind ?? "none"}) — no clean upgrade available
+  planner notes: ${notes}`;
+  }
+
+  const targetVer = planItem?.targetVersion ?? finding.fixedVersion ?? "unknown";
+  return `- fingerprint: ${finding.fingerprint}
+  package: ${finding.package ?? "unknown"} v${finding.currentVersion ?? "?"} → ${targetVer} | impact: ${impact} | severity: ${finding.severity} | rule: ${finding.rule ?? "unknown"}
+  planner notes: ${notes}`;
+}
+
+/** Splits findings into ones already decided (skip/needs-human/minor-skip, persisted immediately) vs ones to send to the agent. */
+async function preFilterFindings(
+  supabase: SupabaseClient,
+  findings: CmFinding[],
+  planMap: Map<string, PlanItem>,
+  policy: ScaTestPolicy,
+): Promise<{ decided: ScaFixResult[]; toDispatch: DispatchItem[] }> {
+  const decided: ScaFixResult[] = [];
+  const toDispatch: DispatchItem[] = [];
 
   for (const finding of findings) {
     const planItem = planMap.get(finding.fingerprint);
+
     if (planItem?.strategy === "skip" || planItem?.strategy === "needs-human") {
       const fixStatus = planItem.strategy === "skip" ? "skipped" : "needs_human";
       await supabase
         .from("cm_finding")
         .update({ fix_status: fixStatus, fix_notes: planItem.notes })
         .eq("id", finding.id);
-      results.push({ finding, impact: "MINOR", tested: false, fixStatus });
+      decided.push({ finding, impact: "MINOR", tested: false, fixStatus });
       continue;
     }
 
-    const result = await processScaFinding({ ...opts, finding, planItem });
-    results.push(result);
+    const currentVer = finding.currentVersion ?? "0.0.0";
+    const targetVer = planItem?.targetVersion ?? finding.fixedVersion ?? currentVer;
+    const impact = labelUpgradeImpact(currentVer, targetVer);
+    const isMitigation = planItem?.strategy === "mitigate";
+
+    if (policy === "skip-minor" && impact === "MINOR" && !isMitigation) {
+      await supabase
+        .from("cm_finding")
+        .update({ fix_status: "skipped", fix_notes: "MINOR upgrade skipped per sca_test_policy" })
+        .eq("id", finding.id);
+      decided.push({ finding, impact, tested: false, fixStatus: "skipped" });
+      continue;
+    }
+
+    toDispatch.push({ finding, planItem, impact });
   }
 
+  return { decided, toDispatch };
+}
+
+function buildBatchTask(toDispatch: DispatchItem[], runConfig: { buildCommand?: string; testCommand?: string }, workingDir: string): string {
+  const buildCmd = runConfig.buildCommand ?? "";
+  const testCmd = runConfig.testCommand ?? "";
+  const findingsSummary = toDispatch.map(describeFinding).join("\n\n");
+
+  return `Fix ${toDispatch.length} SCA (dependency) vulnerability finding(s) in this repo. Fix ALL of them in this single session.
+
+For "upgrade" strategy findings:
+1. Use context7 to look up the target version's changelog and API changes.
+2. Use Tavily to research any breaking changes or known issues with the upgrade.
+3. Find all manifest files (package.json, pom.xml, build.gradle, requirements.txt, etc.) declaring the dependency and apply the version bump.
+4. If the new API has breaking changes, update the call sites accordingly.
+
+For "mitigate" strategy findings (no clean upgrade available):
+- override: add/extend npm overrides pinning the transitive dep to a patched version.
+- resolution: add/extend yarn resolutions.
+- dependency-management: pin via Maven <dependencyManagement> or Gradle resolutionStrategy.
+- alias: alias the dependency to a patched build.
+- replacement: swap the abandoned package for a maintained drop-in equivalent, update imports minimally.
+
+After applying all fixes:
+5. Run the build command to verify: ${buildCmd || "(none configured — skip build verification)"}
+6. Run the test command to verify: ${testCmd || "(none configured — skip test verification)"}
+7. If build or tests fail because of one of your changes, revert that specific change and mark it "failed" — don't let one bad fix block the others.
+8. NEVER fake a fix — do what actually closes the finding.
+
+Findings to fix:
+${findingsSummary}
+
+Return your final message as ONLY a valid JSON object (no markdown, no extra prose) matching this schema:
+{
+  "results": [
+    { "fingerprint": "<exact fingerprint from input>", "fixStatus": "fixed" | "failed" | "skipped", "notes": "<what you did or why it failed>" }
+  ]
+}
+
+Working directory: ${workingDir}`;
+}
+
+/** Persists a fixStatus per dispatched finding, preferring the agent's per-finding JSON verdict, falling back to a single shared status/notes. */
+async function persistDispatchResults(
+  supabase: SupabaseClient,
+  toDispatch: DispatchItem[],
+  byFingerprint: Map<string, { fixStatus: "fixed" | "failed" | "skipped"; notes: string }> | null,
+  fallback: { fixStatus: "fixed" | "failed"; notes: string },
+): Promise<ScaFixResult[]> {
+  const results: ScaFixResult[] = [];
+  for (const { finding, impact } of toDispatch) {
+    const item = byFingerprint?.get(finding.fingerprint);
+    const fixStatus = item?.fixStatus ?? fallback.fixStatus;
+    const notes = item?.notes ?? fallback.notes;
+    await supabase
+      .from("cm_finding")
+      .update({ fix_status: fixStatus, fix_notes: notes.slice(0, 1000), upgrade_impact: impact })
+      .eq("id", finding.id);
+    results.push({ finding, impact, tested: true, fixStatus });
+  }
   return results;
+}
+
+export async function processScaFindings(opts: ScaFindingsOptions): Promise<ScaFixResult[]> {
+  const { supabase, agentRunner, scanId, workspaceId, findings, policy, workingDir, runConfig, planItems } = opts;
+  const planMap = new Map(planItems.map((i) => [i.fingerprint, i]));
+
+  const { decided, toDispatch } = await preFilterFindings(supabase, findings, planMap, policy);
+  if (toDispatch.length === 0) {
+    return decided;
+  }
+
+  await supabase
+    .from("cm_finding")
+    .update({ fix_status: "fixing" })
+    .in("id", toDispatch.map((d) => d.finding.id));
+
+  const task = {
+    description: buildBatchTask(toDispatch, runConfig, workingDir),
+    workingDir,
+  };
+
+  try {
+    const result = await dispatchAgent(
+      supabase, agentRunner, "cm-sca-agent", scanId, workspaceId, task,
+    );
+
+    const jsonMatch = /\{[\s\S]*\}/m.exec(result.summary);
+    const parsed = jsonMatch ? CmBatchFixResultSchema.safeParse(JSON.parse(jsonMatch[0])) : null;
+    const fallback: { fixStatus: "fixed" | "failed"; notes: string } = {
+      fixStatus: result.changed ? "fixed" : "failed",
+      notes: result.summary,
+    };
+
+    if (!parsed?.success) {
+      console.warn(`[sca] batch fix result JSON missing/invalid for scan ${scanId}, falling back to overall changed status`);
+    }
+
+    const byFingerprint = parsed?.success
+      ? new Map(parsed.data.results.map((r) => [r.fingerprint, r]))
+      : null;
+
+    const dispatched = await persistDispatchResults(supabase, toDispatch, byFingerprint, fallback);
+    return [...decided, ...dispatched];
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const dispatched = await persistDispatchResults(supabase, toDispatch, null, { fixStatus: "failed", notes: msg });
+    return [...decided, ...dispatched];
+  }
 }

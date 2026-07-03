@@ -22,6 +22,16 @@ type CmPipelineRow = {
   cron: string;
 };
 
+// why: avoid re-logging the same "skipping" state on every poll tick
+let lastLoggedSkipReason: string | null = null;
+
+function logSkipOnce(reason: string): void {
+  if (lastLoggedSkipReason !== reason) {
+    console.log(reason);
+    lastLoggedSkipReason = reason;
+  }
+}
+
 export async function runScheduler(
   supabase: SupabaseClient,
   boss: PgBoss,
@@ -34,16 +44,18 @@ export async function runScheduler(
     .single() as unknown as { data: CmPipelineRow | null; error: { message: string } | null };
 
   if (pipelineResp.error || !pipelineResp.data) {
-    console.log("[scheduler] no pipeline configured, skipping");
+    logSkipOnce("[scheduler] no pipeline configured, skipping");
     return;
   }
 
   const pipeline = pipelineResp.data;
 
   if (!pipeline.enabled) {
-    console.log("[scheduler] pipeline is disabled, skipping");
+    logSkipOnce("[scheduler] pipeline is disabled, skipping");
     return;
   }
+
+  lastLoggedSkipReason = null;
 
   const reposResp = await supabase
     .from("cm_repo")

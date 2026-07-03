@@ -8,7 +8,7 @@ vi.mock("../pipeline/dispatch.js", () => ({
   dispatchAgent: mockDispatchAgent,
 }));
 
-import { processSastFinding } from "../pipeline/sast.js";
+import { processSastFindings } from "../pipeline/sast.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CmFinding } from "@conductor/cm-core";
 import type { AgentRunner } from "@conductor/cm-adapters";
@@ -36,13 +36,26 @@ const SAST_FINDING: CmFinding = {
   updatedAt: "2026-06-03T12:00:00Z",
 };
 
+const SAST_FINDING_2: CmFinding = {
+  ...SAST_FINDING,
+  id: "f-sast-002",
+  file: "src/routes/orders.ts",
+  line: 17,
+  fingerprint: "sast|orders.ts|XSS|17",
+  rule: "XSS",
+  taintFlow: null,
+};
+
 function makeSupabase() {
   const updates: Record<string, unknown>[] = [];
   const supabase = {
     from: vi.fn((_table: string) => ({
       update: vi.fn((payload: Record<string, unknown>) => {
         updates.push(payload);
-        return { eq: vi.fn().mockReturnThis() };
+        return {
+          eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
+        };
       }),
     })),
   } as unknown as SupabaseClient;
@@ -54,42 +67,45 @@ const stubRunner = {} as AgentRunner;
 const OPTS_BASE = {
   scanId: "scan-001",
   workspaceId: "ws-001",
-  finding: SAST_FINDING,
   workingDir: "/tmp/repo",
   runConfig: { buildCommand: "npm run build" },
+  planItems: [],
 };
 
-describe("processSastFinding", () => {
-  it("dispatches cm-sast-agent with file and taint context in description", async () => {
+describe("processSastFindings", () => {
+  it("dispatches cm-sast-agent once with all findings' file/taint context in one task", async () => {
     const { supabase } = makeSupabase();
-    mockDispatchAgent.mockResolvedValueOnce({ summary: "Fixed SQLi", changed: true, runId: "r1", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 40 });
-
-    await processSastFinding({ ...OPTS_BASE, supabase, agentRunner: stubRunner });
-
-    expect(mockDispatchAgent).toHaveBeenCalledWith(
-      supabase,
-      stubRunner,
-      "cm-sast-agent",
-      "scan-001",
-      "ws-001",
-      expect.objectContaining({
-        description: expect.stringContaining("src/routes/users.ts"),
+    mockDispatchAgent.mockResolvedValueOnce({
+      summary: JSON.stringify({
+        results: [
+          { fingerprint: SAST_FINDING.fingerprint, fixStatus: "fixed", notes: "parameterized query" },
+          { fingerprint: SAST_FINDING_2.fingerprint, fixStatus: "fixed", notes: "encoded output" },
+        ],
       }),
-    );
-    const task = mockDispatchAgent.mock.calls[0]![5];
+      changed: true, runId: "r1", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 40,
+    });
+
+    await processSastFindings({ ...OPTS_BASE, supabase, agentRunner: stubRunner, findings: [SAST_FINDING, SAST_FINDING_2] });
+
+    expect(mockDispatchAgent).toHaveBeenCalledTimes(1);
+    const task = mockDispatchAgent.mock.calls[0]![5] as { description: string };
+    expect(task.description).toContain("src/routes/users.ts");
+    expect(task.description).toContain("src/routes/orders.ts");
     expect(task.description).toContain("src/api/input.ts");
     expect(task.description).toContain("SQL Injection");
+    expect(task.description).toContain("XSS");
   });
 
-  it("skips dispatch when planItem.strategy is skip", async () => {
-    const { supabase } = makeSupabase();
+  it("skips dispatch entirely when planItem.strategy is skip for all findings", async () => {
     mockDispatchAgent.mockClear();
+    const { supabase } = makeSupabase();
 
-    const result = await processSastFinding({
+    const results = await processSastFindings({
       ...OPTS_BASE,
       supabase,
       agentRunner: stubRunner,
-      planItem: {
+      findings: [SAST_FINDING],
+      planItems: [{
         fingerprint: SAST_FINDING.fingerprint,
         strategy: "skip",
         category: "backend",
@@ -99,42 +115,68 @@ describe("processSastFinding", () => {
         priority: 1,
         confidence: 0.9,
         notes: "not exploitable in this context",
-      },
+      }],
     });
 
     expect(mockDispatchAgent).not.toHaveBeenCalled();
-    expect(result.fixStatus).toBe("skipped");
+    expect(results[0]!.fixStatus).toBe("skipped");
   });
 
-  it("sets fixStatus fixed when dispatch returns changed=true", async () => {
-    const { supabase, updates } = makeSupabase();
-    mockDispatchAgent.mockResolvedValueOnce({ summary: "Applied parameterized query", changed: true, runId: "r2", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 40 });
+  it("marks needs-human findings without dispatching, still dispatches the rest", async () => {
+    mockDispatchAgent.mockClear();
+    const { supabase } = makeSupabase();
+    mockDispatchAgent.mockResolvedValueOnce({
+      summary: JSON.stringify({ results: [{ fingerprint: SAST_FINDING_2.fingerprint, fixStatus: "fixed", notes: "fixed" }] }),
+      changed: true, runId: "r2", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 50, outputTokens: 20,
+    });
 
-    const result = await processSastFinding({ ...OPTS_BASE, supabase, agentRunner: stubRunner });
+    const results = await processSastFindings({
+      ...OPTS_BASE,
+      supabase,
+      agentRunner: stubRunner,
+      findings: [SAST_FINDING, SAST_FINDING_2],
+      planItems: [{
+        fingerprint: SAST_FINDING.fingerprint,
+        strategy: "needs-human",
+        category: "backend",
+        reachable: true,
+        exploitable: true,
+        falsePositive: false,
+        priority: 5,
+        confidence: 0.5,
+        notes: "requires architecture change",
+      }],
+    });
 
-    expect(result.fixStatus).toBe("fixed");
-    const finalUpdate = updates.find((u) => u.fix_status === "fixed");
-    expect(finalUpdate).toBeDefined();
+    expect(mockDispatchAgent).toHaveBeenCalledTimes(1);
+    const task = mockDispatchAgent.mock.calls[0]![5] as { description: string };
+    expect(task.description).not.toContain("SQL Injection");
+    expect(results.find((r) => r.finding.id === SAST_FINDING.id)?.fixStatus).toBe("needs_human");
+    expect(results.find((r) => r.finding.id === SAST_FINDING_2.id)?.fixStatus).toBe("fixed");
   });
 
-  it("sets fixStatus failed when dispatch returns changed=false", async () => {
-    const { supabase, updates } = makeSupabase();
-    mockDispatchAgent.mockResolvedValueOnce({ summary: "Could not apply fix", changed: false, runId: "r3", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 40 });
+  it("falls back to overall changed status per finding when agent output has no valid JSON", async () => {
+    mockDispatchAgent.mockClear();
+    const { supabase } = makeSupabase();
+    mockDispatchAgent.mockResolvedValueOnce({
+      summary: "I fixed everything, trust me.",
+      changed: true, runId: "r3", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 50, outputTokens: 20,
+    });
 
-    const result = await processSastFinding({ ...OPTS_BASE, supabase, agentRunner: stubRunner });
+    const results = await processSastFindings({ ...OPTS_BASE, supabase, agentRunner: stubRunner, findings: [SAST_FINDING, SAST_FINDING_2] });
 
-    expect(result.fixStatus).toBe("failed");
-    const finalUpdate = updates.find((u) => u.fix_status === "failed");
-    expect(finalUpdate).toBeDefined();
+    expect(results).toHaveLength(2);
+    for (const r of results) expect(r.fixStatus).toBe("fixed");
   });
 
-  it("sets fixStatus failed and does NOT throw when dispatch throws", async () => {
+  it("marks all dispatched findings failed and does NOT throw when dispatch throws", async () => {
+    mockDispatchAgent.mockClear();
     const { supabase } = makeSupabase();
     mockDispatchAgent.mockRejectedValueOnce(new Error("agent timeout"));
 
-    const result = await processSastFinding({ ...OPTS_BASE, supabase, agentRunner: stubRunner });
+    const results = await processSastFindings({ ...OPTS_BASE, supabase, agentRunner: stubRunner, findings: [SAST_FINDING] });
 
-    expect(result.fixStatus).toBe("failed");
-    expect(result.summary).toContain("agent timeout");
+    expect(results[0]!.fixStatus).toBe("failed");
+    expect(results[0]!.summary).toContain("agent timeout");
   });
 });

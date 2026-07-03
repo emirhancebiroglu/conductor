@@ -1,5 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { generateReport, saveReport } from "@conductor/cm-adapters";
+import { generateReport, saveReport, loadLogo } from "@conductor/cm-adapters";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+// apps/cm-worker/src/pipeline -> apps/cm-worker/assets/branding
+const BRANDING_DIR = join(__dirname, "..", "..", "assets", "branding");
 
 type CmScanRow = {
   id: string;
@@ -77,9 +83,10 @@ export async function generatePipelineReport(
       result: f.fix_status === "fixed" ? "Fixed" : "Skipped",
     }));
 
-  const finalStatus = scan.status === "verified" || scan.status === "done" || scan.status === "pr_opened"
-    ? "All issues resolved"
-    : `Pipeline ended with status: ${scan.status}`;
+  const [operatorLogo, customerLogo] = await Promise.all([
+    loadLogo(join(BRANDING_DIR, "32bit-logo.png")),
+    loadLogo(join(BRANDING_DIR, "toyota-logo.png")),
+  ]);
 
   const buffer = await generateReport({
     scan: {
@@ -93,6 +100,9 @@ export async function generatePipelineReport(
     },
     findings,
     fixes: fixesApplied,
+    needsHuman,
+    operatorLogo,
+    customerLogo,
   });
 
   const filePath = await saveReport(buffer, reportDir, repoName);
@@ -101,7 +111,7 @@ export async function generatePipelineReport(
     scan_id: scanId,
     workspace_id: scan.workspace_id,
     path: filePath,
-    format: "docx",
+    format: "pdf",
   });
 
   await supabase

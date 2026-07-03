@@ -302,6 +302,23 @@ export const CmFixPlanSchema = z.object({
 export type CmFixPlan = z.infer<typeof CmFixPlanSchema>;
 
 // ---------------------------------------------------------------------------
+// Batch fix result (emitted by cm-sca-agent / cm-sast-agent when fixing a
+// whole category's findings in a single dispatch instead of one per finding)
+// ---------------------------------------------------------------------------
+
+export const CmBatchFixResultItemSchema = z.object({
+  fingerprint: z.string(),
+  fixStatus: z.enum(["fixed", "failed", "skipped"]),
+  notes: z.string(),
+});
+export type CmBatchFixResultItem = z.infer<typeof CmBatchFixResultItemSchema>;
+
+export const CmBatchFixResultSchema = z.object({
+  results: z.array(CmBatchFixResultItemSchema),
+});
+export type CmBatchFixResult = z.infer<typeof CmBatchFixResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Snake ↔ Camel mappers
 // ---------------------------------------------------------------------------
 

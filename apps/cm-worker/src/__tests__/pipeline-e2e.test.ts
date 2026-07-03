@@ -74,7 +74,10 @@ function createMockDb() {
           Object.assign(items[items.length - 1]!, payload);
         }
         capture.push({ table, payload });
-        return { eq: vi.fn().mockReturnThis() };
+        return {
+          eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockResolvedValue({ error: null }),
+        };
       }),
       insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
         const row = { id: `${table}-row-${Date.now()}`, ...payload };
@@ -233,6 +236,8 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
         push: pushFn,
         pushBranch: pushFn,
         cleanup: vi.fn().mockResolvedValue(undefined),
+        diffPatch: vi.fn().mockResolvedValue(""),
+        applyPatch: vi.fn().mockResolvedValue(true),
       };
 
       mockPullsCreate.mockResolvedValue({

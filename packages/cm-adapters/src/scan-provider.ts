@@ -8,4 +8,10 @@ export type ScanResult = {
 export interface ScanProvider {
   scan(repo: { owner: string; name: string }, branch: string): Promise<ScanResult>;
   fetchResults(externalScanId: string): Promise<CmFinding[]>;
+  /**
+   * Returns the most recent completed scan for repo+branch, if one exists,
+   * without triggering a new scan. Used to skip a fresh `scan()` call for the
+   * initial baseline scan when a recent scheduled scan already covers it.
+   */
+  getLatestScan?(repo: { owner: string; name: string }, branch: string): Promise<{ externalScanId: string } | null>;
 }

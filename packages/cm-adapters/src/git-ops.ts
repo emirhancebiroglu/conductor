@@ -49,6 +49,26 @@ export class GitOps {
     return this.push(dir, branch);
   }
 
+  async diffPatch(dir: string): Promise<string> {
+    this.ensureUnderTempRoot(dir);
+    // why: execa strips the trailing newline from stdout by default, which
+    // corrupts a patch whose last line is a context/added line — git apply
+    // requires the final line to end with \n (or an explicit no-newline marker).
+    const { stdout } = await execa("git", ["diff", "--binary"], { cwd: dir });
+    return stdout ? `${stdout}\n` : stdout;
+  }
+
+  async applyPatch(dir: string, patch: string): Promise<boolean> {
+    this.ensureUnderTempRoot(dir);
+    if (!patch.trim()) return true;
+    try {
+      await execa("git", ["apply", "--3way"], { cwd: dir, input: patch });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async cleanup(dir: string): Promise<void> {
     if (!isUnderRoot(dir, this.tempRoot)) {
       throw new Error(

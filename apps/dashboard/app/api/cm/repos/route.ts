@@ -29,18 +29,25 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const page = Math.max(0, Number.parseInt(url.searchParams.get("page") ?? "0", 10) || 0);
   const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("limit") ?? String(PAGE_LIMIT), 10) || PAGE_LIMIT));
+  const search = (url.searchParams.get("search") ?? "").trim();
   const from = page * limit;
 
   try {
     const kind = await getActiveWorkspaceKind();
     const workspaceId = await resolveWorkspaceId(supabase, kind);
 
-    const { data, error, count } = await supabase
+    let query = supabase
       .from("cm_repo")
       .select("id, owner, name, default_branch, source, priority, enabled", { count: "exact" })
       .eq("workspace_id", workspaceId)
       .order("priority", { ascending: true })
       .range(from, from + limit - 1);
+
+    if (search) {
+      query = query.ilike("name", `%${search}%`);
+    }
+
+    const { data, error, count } = await query;
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

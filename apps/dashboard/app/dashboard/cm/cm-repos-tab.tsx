@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,14 @@ type CmRepo = {
 
 export function CmReposTab() {
   const [page, setPage] = useState(0);
-  const { repos: rawRepos, total, isLoading, mutate } = useCmRepos(page);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const { repos: rawRepos, total, isLoading, mutate } = useCmRepos(page, debouncedSearch);
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(0); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
   const repos = rawRepos as CmRepo[];
   const totalPages = Math.ceil(total / PAGE_LIMIT);
 
@@ -168,6 +175,12 @@ export function CmReposTab() {
   return (
     <div>
       <div className="rt-actions">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name..."
+          className="rt-input rt-search"
+        />
         <Button onClick={handleDiscover} disabled={isDiscovering} className="rt-btn rt-btn--primary" style={{ backgroundColor: "var(--amber)", color: "var(--surface)" }}>
           {isDiscovering ? "Discovering..." : "Discover Now"}
         </Button>
@@ -273,7 +286,8 @@ export function CmReposTab() {
       )}
 
       <style jsx>{`
-        .rt-actions { display: flex; gap: 8px; margin-bottom: 16px; }
+        .rt-actions { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+        .rt-search { width: 220px; flex-shrink: 0; }
         .rt-btn { font-size: 12px; padding: 8px 20px; border: 1px solid var(--border); cursor: pointer; border-radius: 4px; }
         .rt-btn--primary { border: none; }
         .rt-btn--ghost { background: transparent; color: var(--text-secondary); }

@@ -100,6 +100,88 @@ function rowToFinding(row: CmFindingRow): CmFinding {
   };
 }
 
+type CategoryFixOptions = {
+  supabase: SupabaseClient;
+  agentRunner: AgentRunner;
+  scanId: string;
+  workspaceId: string;
+  sca: CmFinding[];
+  sast: CmFinding[];
+  scaPolicy: "skip-minor" | "test-all";
+  planItems: Parameters<typeof processScaFindings>[0]["planItems"];
+  primaryDir: string;
+  runConfig: RunConfig;
+  ops: GitOps;
+  repoUrl: string;
+  cloneBranch: string;
+  fixBranch: string;
+};
+
+/**
+ * Runs SCA and SAST fixes for one attempt. If only one category has findings,
+ * it runs alone against the primary clone. If both do, they run in parallel
+ * against separate clones (agents share nothing, avoiding concurrent-edit
+ * races in one worktree), then the SAST clone's diff is merged onto the
+ * primary (SCA) clone before verification/commit.
+ */
+async function runCategoryFixes(opts: CategoryFixOptions): Promise<void> {
+  const { supabase, agentRunner, scanId, workspaceId, sca, sast, scaPolicy, planItems, primaryDir, runConfig, ops, repoUrl, cloneBranch, fixBranch } = opts;
+
+  if (sca.length > 0 && sast.length === 0) {
+    await processScaFindings({
+      supabase, agentRunner, scanId, workspaceId,
+      findings: sca, policy: scaPolicy, workingDir: primaryDir, runConfig, planItems,
+    });
+    return;
+  }
+
+  if (sast.length > 0 && sca.length === 0) {
+    await processSastFindings({
+      supabase, agentRunner, scanId, workspaceId,
+      findings: sast, workingDir: primaryDir, runConfig, planItems,
+    });
+    return;
+  }
+
+  if (sca.length === 0 && sast.length === 0) {
+    return;
+  }
+
+  // Both categories present — parallel clones.
+  const secondaryDir = await ops.cloneToTemp(repoUrl, cloneBranch);
+  try {
+    await ops.createBranch(secondaryDir, fixBranch);
+
+    const [, sastResults] = await Promise.all([
+      processScaFindings({
+        supabase, agentRunner, scanId, workspaceId,
+        findings: sca, policy: scaPolicy, workingDir: primaryDir, runConfig, planItems,
+      }),
+      processSastFindings({
+        supabase, agentRunner, scanId, workspaceId,
+        findings: sast, workingDir: secondaryDir, runConfig, planItems,
+      }),
+    ]);
+
+    const patch = await ops.diffPatch(secondaryDir);
+    const applied = await ops.applyPatch(primaryDir, patch);
+
+    if (!applied) {
+      console.warn(`[fix] scan ${scanId}: merge conflict applying SAST changes onto SCA clone, deferring SAST fixes to next attempt`);
+      for (const r of sastResults) {
+        if (r.fixStatus === "fixed") {
+          await supabase
+            .from("cm_finding")
+            .update({ fix_status: "failed", fix_notes: "merge conflict with SCA fixes this attempt, will retry next attempt" })
+            .eq("id", r.finding.id);
+        }
+      }
+    }
+  } finally {
+    await ops.cleanup(secondaryDir).catch(() => undefined);
+  }
+}
+
 async function rescanFixBranch(
   supabase: SupabaseClient,
   scanProvider: ScanProvider,
@@ -117,13 +199,118 @@ async function rescanFixBranch(
   return { clean: criticalHigh.length === 0 };
 }
 
-export async function handleFix(
-  supabase: SupabaseClient,
-  scanProvider: ScanProvider,
-  agentRunner: AgentRunner,
-  scanId: string,
-  gitOps?: GitOps,
-): Promise<void> {
+type FixAttemptContext = {
+  supabase: SupabaseClient;
+  scanProvider: ScanProvider;
+  agentRunner: AgentRunner;
+  scanId: string;
+  workspaceId: string;
+  repo: { owner: string; name: string };
+  workDir: string;
+  ops: GitOps;
+  repoUrl: string;
+  cloneBranch: string;
+  fixBranch: string;
+  scaPolicy: "skip-minor" | "test-all";
+  severityThreshold: CmFinding["severity"][];
+  runConfig: RunConfig;
+  attempt: number;
+  maxFixAttempts: number;
+};
+
+type FixAttemptOutcome =
+  | { kind: "clean" }
+  | { kind: "verification_failed"; summary: string }
+  | { kind: "continue"; remainingFindings: CmFinding[] };
+
+/** Runs one plan→fix→verify→commit→rescan cycle for a single fix attempt. */
+async function runFixAttempt(ctx: FixAttemptContext, findings: CmFinding[]): Promise<FixAttemptOutcome> {
+  const { supabase, scanProvider, agentRunner, scanId, workspaceId, repo, workDir, ops, repoUrl, cloneBranch, fixBranch, scaPolicy, severityThreshold, runConfig, attempt, maxFixAttempts } = ctx;
+
+  const { sca, sast } = filterAndRouteFindings(findings, severityThreshold);
+  const actionable = [...sca, ...sast];
+  if (actionable.length === 0) {
+    return { kind: "clean" };
+  }
+
+  await supabase
+    .from("cm_scan")
+    .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: planning...` })
+    .eq("id", scanId);
+
+  const plan = await runPlanner(supabase, agentRunner, scanId, workspaceId, actionable, workDir);
+
+  const toFix = plan.items.filter((i) => i.strategy !== "skip" && i.strategy !== "needs-human");
+  const needsHuman = plan.items.filter((i) => i.strategy === "needs-human");
+  if (needsHuman.length > 0) {
+    console.log(`[fix] scan ${scanId}: ${needsHuman.length} findings flagged needs-human`);
+  }
+  console.log(`[fix] scan ${scanId}: ${toFix.length} to fix, ${needsHuman.length} needs-human`);
+
+  const stepLabel = sca.length > 0 && sast.length > 0
+    ? `fixing ${sca.length} SCA + ${sast.length} SAST findings in parallel...`
+    : `fixing ${sca.length + sast.length} findings...`;
+  await supabase
+    .from("cm_scan")
+    .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: ${stepLabel}` })
+    .eq("id", scanId);
+
+  await runCategoryFixes({
+    supabase, agentRunner, scanId, workspaceId,
+    sca, sast, scaPolicy, planItems: plan.items,
+    primaryDir: workDir, runConfig,
+    ops, repoUrl, cloneBranch, fixBranch,
+  });
+
+  await supabase
+    .from("cm_scan")
+    .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: verifying...` })
+    .eq("id", scanId);
+
+  const { passed, summary: verifySummary } = await runVerifier({
+    supabase, agentRunner, scanId, workspaceId, workingDir: workDir, runConfig,
+  });
+
+  if (!passed) {
+    return { kind: "verification_failed", summary: verifySummary };
+  }
+
+  await ops.commitAll(workDir, `chore(security): apply Checkmarx fix(es) [cm-auto attempt ${attempt}]`);
+
+  await supabase
+    .from("cm_scan")
+    .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: rescanning...` })
+    .eq("id", scanId);
+
+  await ops.push(workDir, fixBranch);
+  const rescanResult = await rescanFixBranch(supabase, scanProvider, repo, fixBranch);
+
+  if (rescanResult.clean) {
+    return { kind: "clean" };
+  }
+
+  const nextFindingsResp = await supabase
+    .from("cm_finding")
+    .select("*")
+    .eq("scan_id", scanId)
+    .in("fix_status", ["open", "failed"]) as unknown as { data: CmFindingRow[] | null; error: { message: string } | null };
+
+  return { kind: "continue", remainingFindings: (nextFindingsResp.data ?? []).map(rowToFinding) };
+}
+
+type FixInputs = {
+  scan: CmScanRow;
+  repo: CmRepoRow;
+  scaPolicy: "skip-minor" | "test-all";
+  severityThreshold: CmFinding["severity"][];
+  maxFixAttempts: number;
+  fixBranch: string;
+  reportDir: string;
+  findings: CmFinding[];
+};
+
+/** Loads and validates everything handleFix needs; returns null when the scan should be skipped (not an error). */
+async function loadFixInputs(supabase: SupabaseClient, scanId: string): Promise<FixInputs | null> {
   const scanResp = await supabase
     .from("cm_scan")
     .select("*")
@@ -138,12 +325,12 @@ export async function handleFix(
 
   if (!canTransitionScan(scan.status as never, "fixing")) {
     console.log(`[fix] scan ${scanId} cannot transition to fixing (status=${scan.status})`);
-    return;
+    return null;
   }
 
   if (scan.findings_actionable === 0) {
     console.log(`[fix] scan ${scanId} has no actionable findings, skipping fix`);
-    return;
+    return null;
   }
 
   const repoResp = await supabase
@@ -158,7 +345,6 @@ export async function handleFix(
 
   const repo = repoResp.data;
 
-  // Load pipeline config
   const pipelineResp = await supabase
     .from("cm_pipeline")
     .select("sca_test_policy, fix_branch, severity_threshold, max_fix_attempts, report_dir")
@@ -166,13 +352,7 @@ export async function handleFix(
     .single() as unknown as { data: CmPipelineRow | null; error: { message: string } | null };
 
   const pipeline = pipelineResp.data;
-  const scaPolicy = (pipeline?.sca_test_policy ?? "skip-minor") as "skip-minor" | "test-all";
-  const severityThreshold = (pipeline?.severity_threshold ?? ["CRITICAL", "HIGH"]) as CmFinding["severity"][];
-  const maxFixAttempts = pipeline?.max_fix_attempts ?? 2;
-  const fixBranch = pipeline?.fix_branch ?? "checkmarx-fix";
-  const reportDir = pipeline?.report_dir ?? "D:/checkmarx-reports";
 
-  // Load actionable findings
   const findingsResp = await supabase
     .from("cm_finding")
     .select("*")
@@ -181,8 +361,32 @@ export async function handleFix(
 
   if (findingsResp.error || !findingsResp.data || findingsResp.data.length === 0) {
     console.log(`[fix] scan ${scanId}: no open findings to fix`);
-    return;
+    return null;
   }
+
+  return {
+    scan,
+    repo,
+    scaPolicy: (pipeline?.sca_test_policy ?? "skip-minor") as "skip-minor" | "test-all",
+    severityThreshold: (pipeline?.severity_threshold ?? ["CRITICAL", "HIGH"]) as CmFinding["severity"][],
+    maxFixAttempts: pipeline?.max_fix_attempts ?? 2,
+    fixBranch: pipeline?.fix_branch ?? "checkmarx-fix",
+    reportDir: pipeline?.report_dir ?? "D:/checkmarx-reports",
+    findings: findingsResp.data.map(rowToFinding),
+  };
+}
+
+export async function handleFix(
+  supabase: SupabaseClient,
+  scanProvider: ScanProvider,
+  agentRunner: AgentRunner,
+  scanId: string,
+  gitOps?: GitOps,
+): Promise<void> {
+  const inputs = await loadFixInputs(supabase, scanId);
+  if (!inputs) return;
+
+  const { scan, repo, scaPolicy, severityThreshold, maxFixAttempts, fixBranch, reportDir, findings } = inputs;
 
   const ops = gitOps ?? new GitOps();
   const cloneBranch = scan.branch_scanned ?? repo.default_branch;
@@ -200,119 +404,40 @@ export async function handleFix(
       .update({ status: "fixing", current_step: "Running fix planner..." })
       .eq("id", scanId);
 
-    let allFindings = findingsResp.data.map(rowToFinding);
+    let allFindings = findings;
     let attempt = 0;
     let allClean = false;
+
+    const attemptCtx: Omit<FixAttemptContext, "attempt"> = {
+      supabase, scanProvider, agentRunner, scanId,
+      workspaceId: scan.workspace_id,
+      repo, workDir, ops, repoUrl, cloneBranch, fixBranch,
+      scaPolicy, severityThreshold, runConfig, maxFixAttempts,
+    };
 
     while (attempt < maxFixAttempts && !allClean) {
       attempt++;
       console.log(`[fix] scan ${scanId}: fix attempt ${attempt}/${maxFixAttempts}`);
 
-      const { sca, sast } = filterAndRouteFindings(allFindings, severityThreshold);
-      const actionable = [...sca, ...sast];
+      const outcome = await runFixAttempt({ ...attemptCtx, attempt }, allFindings);
 
-      if (actionable.length === 0) {
+      if (outcome.kind === "clean") {
         allClean = true;
+        console.log(`[fix] scan ${scanId}: rescan clean — all CRITICAL/HIGH resolved`);
         break;
       }
 
-      await supabase
-        .from("cm_scan")
-        .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: planning...` })
-        .eq("id", scanId);
-
-      // 1. Planner
-      const plan = await runPlanner(
-        supabase, agentRunner, scanId, scan.workspace_id, actionable, workDir,
-      );
-
-      const toFix = plan.items.filter((i) => i.strategy !== "skip" && i.strategy !== "needs-human");
-      const needsHuman = plan.items.filter((i) => i.strategy === "needs-human");
-      if (needsHuman.length > 0) {
-        console.log(`[fix] scan ${scanId}: ${needsHuman.length} findings flagged needs-human`);
-      }
-      console.log(`[fix] scan ${scanId}: ${toFix.length} to fix, ${needsHuman.length} needs-human`);
-
-      // 2. SCA fixes
-      if (sca.length > 0) {
+      if (outcome.kind === "verification_failed") {
+        console.log(`[fix] scan ${scanId}: verifier failed — ${outcome.summary.slice(0, 200)}`);
         await supabase
           .from("cm_scan")
-          .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: fixing ${sca.length} SCA findings...` })
-          .eq("id", scanId);
-
-        await processScaFindings({
-          supabase, agentRunner, scanId,
-          workspaceId: scan.workspace_id,
-          findings: sca, policy: scaPolicy,
-          workingDir: workDir, runConfig,
-          planItems: plan.items,
-        });
-      }
-
-      // 3. SAST fixes
-      if (sast.length > 0) {
-        await supabase
-          .from("cm_scan")
-          .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: fixing ${sast.length} SAST findings...` })
-          .eq("id", scanId);
-
-        await processSastFindings({
-          supabase, agentRunner, scanId,
-          workspaceId: scan.workspace_id,
-          findings: sast,
-          workingDir: workDir, runConfig,
-          planItems: plan.items,
-        });
-      }
-
-      // 4. Verifier
-      await supabase
-        .from("cm_scan")
-        .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: verifying...` })
-        .eq("id", scanId);
-
-      const { passed, summary: verifySummary } = await runVerifier({
-        supabase, agentRunner, scanId,
-        workspaceId: scan.workspace_id,
-        workingDir: workDir, runConfig,
-      });
-
-      if (!passed) {
-        console.log(`[fix] scan ${scanId}: verifier failed — ${verifySummary.slice(0, 200)}`);
-        await supabase
-          .from("cm_scan")
-          .update({ status: "needs_human", current_step: `Verification failed: ${verifySummary.slice(0, 300)}` })
+          .update({ status: "needs_human", current_step: `Verification failed: ${outcome.summary.slice(0, 300)}` })
           .eq("id", scanId);
         return;
       }
 
-      // 5. Commit
-      await ops.commitAll(workDir, `chore(security): apply Checkmarx fix(es) [cm-auto attempt ${attempt}]`);
-
-      // 6. Push and rescan the fix branch
-      await supabase
-        .from("cm_scan")
-        .update({ current_step: `Fix attempt ${attempt}/${maxFixAttempts}: rescanning...` })
-        .eq("id", scanId);
-
-      await ops.push(workDir, fixBranch);
-      const rescanResult = await rescanFixBranch(supabase, scanProvider, repo, fixBranch);
-
-      if (rescanResult.clean) {
-        allClean = true;
-        console.log(`[fix] scan ${scanId}: rescan clean — all CRITICAL/HIGH resolved`);
-      } else {
-        console.log(`[fix] scan ${scanId}: CRITICAL/HIGH remain after attempt ${attempt}`);
-
-        // Reload findings for next attempt
-        const nextFindingsResp = await supabase
-          .from("cm_finding")
-          .select("*")
-          .eq("scan_id", scanId)
-          .in("fix_status", ["open", "failed"]) as unknown as { data: CmFindingRow[] | null; error: { message: string } | null };
-
-        allFindings = (nextFindingsResp.data ?? []).map(rowToFinding);
-      }
+      console.log(`[fix] scan ${scanId}: CRITICAL/HIGH remain after attempt ${attempt}`);
+      allFindings = outcome.remainingFindings;
     }
 
     if (allClean) {

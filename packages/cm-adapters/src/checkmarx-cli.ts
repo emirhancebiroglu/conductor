@@ -25,7 +25,13 @@ export class CheckmarxScanError extends Error {
 
 type Env = {
   CX_BASE_URI?: string;
+  CX_BASE_AUTH_URI?: string;
   CX_TENANT?: string;
+  // why: the Keycloak realm slug used by the IAM token endpoint can differ
+  // from CX_TENANT (e.g. tenant "toyota-europe" but realm "toyotaeurope") —
+  // CX_TENANT is what the cx CLI's --tenant flag expects, which does its own
+  // internal resolution. Falls back to CX_TENANT when not set.
+  CX_IAM_REALM?: string;
   CX_APIKEY?: string;
   CX_SCA_RESOLVER?: string;
   GITHUB_TOKEN_WORK?: string;
@@ -40,10 +46,14 @@ async function zipDirectory(sourceDir: string, outPath: string): Promise<void> {
 
 export class CheckmarxCliProvider implements ScanProvider {
   private readonly baseUri: string;
+  private readonly baseAuthUri: string | undefined;
   private readonly tenant: string;
+  private readonly iamRealm: string;
   private readonly apiKey: string;
   private readonly githubToken: string;
   private readonly scaResolver: string | undefined;
+  private accessToken: string | undefined;
+  private accessTokenExpiresAt = 0;
 
   constructor(env: Env = process.env) {
     const baseUri = env.CX_BASE_URI;
@@ -65,7 +75,11 @@ export class CheckmarxCliProvider implements ScanProvider {
     }
 
     this.baseUri = baseUri;
+    // why: getLatestScan() is a pure optimization — missing this env var
+    // must not block scan()/fetchResults(), so it's not validated here.
+    this.baseAuthUri = env.CX_BASE_AUTH_URI;
     this.tenant = tenant;
+    this.iamRealm = env.CX_IAM_REALM ?? tenant;
     this.apiKey = apiKey;
     this.githubToken = githubToken;
     this.scaResolver = env.CX_SCA_RESOLVER;
@@ -200,6 +214,99 @@ export class CheckmarxCliProvider implements ScanProvider {
         `Checkmarx CLI error: ${execaErr.message ?? String(err)}`,
         "system_fail",
       );
+    }
+  }
+
+  /**
+   * Exchanges CX_APIKEY (a Checkmarx One refresh token) for a short-lived
+   * access token via the IAM realm token endpoint, caching it until near
+   * expiry. Neither the API key nor the access token are ever logged.
+   */
+  private async getAccessToken(): Promise<string | null> {
+    if (!this.baseAuthUri) return null;
+
+    if (this.accessToken && Date.now() < this.accessTokenExpiresAt) {
+      return this.accessToken;
+    }
+
+    try {
+      const tokenUrl = `${this.baseAuthUri.replace(/\/$/, "")}/auth/realms/${this.iamRealm}/protocol/openid-connect/token`;
+      const response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: "ast-app",
+          refresh_token: this.apiKey,
+        }),
+      });
+
+      if (!response.ok) return null;
+
+      const body = await response.json() as { access_token?: string; expires_in?: number };
+      if (!body.access_token) return null;
+
+      this.accessToken = body.access_token;
+      // why: refresh a bit before actual expiry to avoid a request racing token expiry
+      this.accessTokenExpiresAt = Date.now() + (body.expires_in ?? 60) * 1000 - 5000;
+      return this.accessToken;
+    } catch {
+      return null;
+    }
+  }
+
+  private async findProjectId(projectName: string): Promise<string | null> {
+    const token = await this.getAccessToken();
+    if (!token) return null;
+
+    try {
+      const url = `${this.baseUri.replace(/\/$/, "")}/api/projects?name=${encodeURIComponent(projectName)}`;
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) return null;
+
+      const body = await response.json() as unknown;
+      const projects = Array.isArray(body)
+        ? body
+        : (body as { projects?: unknown[] })?.projects ?? [];
+
+      const match = (projects as Record<string, string>[]).find((p) => p.name === projectName || p.Name === projectName);
+      return match?.id ?? match?.ID ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Looks up the most recent Completed scan for repo+branch via the
+   * Checkmarx One REST API directly, without cloning/zipping/submitting
+   * anything. Returns null if none found or on any failure (missing
+   * CX_BASE_AUTH_URI, network error, no matching project/scan) — this path
+   * is a pure optimization and must never throw or block a real scan.
+   */
+  async getLatestScan(
+    repo: { owner: string; name: string },
+    branch: string,
+  ): Promise<{ externalScanId: string } | null> {
+    const projectName = `${repo.owner}/${repo.name}`;
+
+    const projectId = await this.findProjectId(projectName);
+    if (!projectId) return null;
+
+    const token = await this.getAccessToken();
+    if (!token) return null;
+
+    try {
+      const url = `${this.baseUri.replace(/\/$/, "")}/api/scans?project-id=${encodeURIComponent(projectId)}&branch=${encodeURIComponent(branch)}&statuses=Completed&limit=1`;
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) return null;
+
+      const body = await response.json() as unknown;
+      const scans = Array.isArray(body) ? body : (body as { scans?: unknown[] })?.scans ?? [];
+      const first = (scans as Record<string, string>[])[0];
+      const scanId = first?.ID ?? first?.id;
+      return scanId ? { externalScanId: scanId } : null;
+    } catch {
+      return null;
     }
   }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execa } from "execa";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -100,6 +100,64 @@ describe("GitOps", () => {
   it("cleanup throws on path traversal attempt", async () => {
     await expect(gitOps.cleanup("../malicious")).rejects.toThrow("Path traversal blocked");
     await expect(gitOps.cleanup(join(tmpdir(), "outside"))).rejects.toThrow("Path traversal blocked");
+  });
+
+  it("diffPatch returns empty string for a clean worktree", async () => {
+    const clonedDir = await gitOps.cloneToTemp(bareDir);
+    try {
+      const patch = await gitOps.diffPatch(clonedDir);
+      expect(patch).toBe("");
+    } finally {
+      await gitOps.cleanup(clonedDir);
+    }
+  });
+
+  it("diffPatch captures uncommitted changes, applyPatch replays them onto another clone", async () => {
+    const sourceDir = await gitOps.cloneToTemp(bareDir);
+    const targetDir = await gitOps.cloneToTemp(bareDir);
+    try {
+      await writeFile(join(sourceDir, "README.md"), "# test\nadded by source clone\n");
+
+      const patch = await gitOps.diffPatch(sourceDir);
+      expect(patch).toContain("added by source clone");
+
+      const applied = await gitOps.applyPatch(targetDir, patch);
+      expect(applied).toBe(true);
+
+      const targetContent = await readFile(join(targetDir, "README.md"), "utf-8");
+      expect(targetContent).toContain("added by source clone");
+    } finally {
+      await gitOps.cleanup(sourceDir);
+      await gitOps.cleanup(targetDir);
+    }
+  });
+
+  it("applyPatch is a no-op returning true for an empty patch", async () => {
+    const clonedDir = await gitOps.cloneToTemp(bareDir);
+    try {
+      const applied = await gitOps.applyPatch(clonedDir, "");
+      expect(applied).toBe(true);
+    } finally {
+      await gitOps.cleanup(clonedDir);
+    }
+  });
+
+  it("applyPatch returns false on a conflicting patch", async () => {
+    const sourceDir = await gitOps.cloneToTemp(bareDir);
+    const targetDir = await gitOps.cloneToTemp(bareDir);
+    try {
+      await writeFile(join(sourceDir, "README.md"), "# test\nsource change\n");
+      const patch = await gitOps.diffPatch(sourceDir);
+
+      // Make an incompatible change to the same line in the target so the patch can't apply cleanly.
+      await writeFile(join(targetDir, "README.md"), "completely different content, no shared context\n");
+
+      const applied = await gitOps.applyPatch(targetDir, patch);
+      expect(applied).toBe(false);
+    } finally {
+      await gitOps.cleanup(sourceDir);
+      await gitOps.cleanup(targetDir);
+    }
   });
 
   it("full round-trip: clone → branch → commit → push", async () => {

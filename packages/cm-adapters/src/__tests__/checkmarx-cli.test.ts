@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CheckmarxCliProvider, CheckmarxScanError } from "../checkmarx-cli.js";
 
 const { mockExeca } = vi.hoisted(() => ({
@@ -149,6 +149,116 @@ describe("CheckmarxCliProvider", () => {
         expect((err as CheckmarxScanError).outcome).toBe("system_fail");
       }
     });
+  });
+
+  describe("getLatestScan", () => {
+    const MOCK_ENV_WITH_AUTH = { ...MOCK_ENV, CX_BASE_AUTH_URI: "https://iam.example.com" };
+
+    const TOKEN_RESPONSE = { ok: true, json: () => Promise.resolve({ access_token: "tok-abc", expires_in: 600 }) };
+    const PROJECTS_RESPONSE = { ok: true, json: () => Promise.resolve([{ id: "proj-123", name: "test-owner/ms-test-repo" }]) };
+    const SCANS_RESPONSE = { ok: true, json: () => Promise.resolve([{ ID: "scan-latest-999", Status: "Completed" }]) };
+
+    let mockFetch: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mockFetch = vi.fn();
+      vi.stubGlobal("fetch", mockFetch);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("exchanges token, resolves project id, and returns the latest completed scan", async () => {
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_RESPONSE)
+        .mockResolvedValueOnce(PROJECTS_RESPONSE)
+        .mockResolvedValueOnce(SCANS_RESPONSE);
+
+      const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
+      const result = await provider.getLatestScan({ owner: "test-owner", name: "ms-test-repo" }, "uat");
+
+      expect(result).toEqual({ externalScanId: "scan-latest-999" });
+
+      const tokenCall = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect(tokenCall[0]).toContain("/auth/realms/test-tenant/protocol/openid-connect/token");
+      expect(tokenCall[1]?.method).toBe("POST");
+
+      const projectsCall = mockFetch.mock.calls[1] as [string, RequestInit];
+      expect(projectsCall[0]).toContain("/api/projects?name=");
+      expect((projectsCall[1]?.headers as Record<string, string>).Authorization).toBe("Bearer tok-abc");
+
+      const scansCall = mockFetch.mock.calls[2] as [string, RequestInit];
+      expect(scansCall[0]).toContain("project-id=proj-123");
+      expect(scansCall[0]).toContain("branch=uat");
+    });
+
+    it("caches the access token across calls instead of re-exchanging it", async () => {
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_RESPONSE)
+        .mockResolvedValueOnce(PROJECTS_RESPONSE)
+        .mockResolvedValueOnce(SCANS_RESPONSE)
+        .mockResolvedValueOnce(PROJECTS_RESPONSE)
+        .mockResolvedValueOnce(SCANS_RESPONSE);
+
+      const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
+      await provider.getLatestScan({ owner: "test-owner", name: "ms-test-repo" }, "uat");
+      await provider.getLatestScan({ owner: "test-owner", name: "ms-test-repo" }, "uat");
+
+      const tokenExchangeCalls = mockFetch.mock.calls.filter(([url]) => (url as string).includes("openid-connect/token"));
+      expect(tokenExchangeCalls).toHaveLength(1);
+    });
+
+    it("returns null without any fetch call when CX_BASE_AUTH_URI is not configured", async () => {
+      const provider = new CheckmarxCliProvider(MOCK_ENV);
+      const result = await provider.getLatestScan({ owner: "test-owner", name: "ms-test-repo" }, "uat");
+
+      expect(result).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("returns null when no matching project is found", async () => {
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_RESPONSE)
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) });
+
+      const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
+      const result = await provider.getLatestScan({ owner: "test-owner", name: "ms-test-repo" }, "uat");
+
+      expect(result).toBeNull();
+    });
+
+    it("returns null when the scans response is empty", async () => {
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_RESPONSE)
+        .mockResolvedValueOnce(PROJECTS_RESPONSE)
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([]) });
+
+      const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
+      const result = await provider.getLatestScan({ owner: "test-owner", name: "ms-test-repo" }, "uat");
+
+      expect(result).toBeNull();
+    });
+
+    it("returns null instead of throwing on network error", async () => {
+      mockFetch.mockRejectedValueOnce(new Error("connect ECONNREFUSED"));
+
+      const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
+      const result = await provider.getLatestScan({ owner: "test-owner", name: "ms-test-repo" }, "uat");
+
+      expect(result).toBeNull();
+    });
+
+    it("returns null instead of throwing when the token endpoint responds with an error status", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+
+      const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
+      const result = await provider.getLatestScan({ owner: "test-owner", name: "ms-test-repo" }, "uat");
+
+      expect(result).toBeNull();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
   });
 
   describe("fetchResults", () => {

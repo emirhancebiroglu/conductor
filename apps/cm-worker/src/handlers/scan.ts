@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScanProvider } from "@conductor/cm-adapters";
 import { canTransitionScan } from "@conductor/cm-core";
+import type { CmFinding } from "@conductor/cm-core";
 
 export type ScanJob = {
   scanId: string;
@@ -79,16 +80,30 @@ export async function handleScan(
 
   try {
     const repo = { owner: repoResp.data.owner, name: repoResp.data.name };
-    const scanResult = await scanProvider.scan(repo, branch);
-    const { externalScanId } = scanResult;
+
+    // Reuse the latest completed scan for this repo+branch if one exists —
+    // a scheduled scan already keeps every repo fresh, so the initial
+    // baseline scan doesn't need to clone+zip+submit a brand-new one.
+    const cached = await scanProvider.getLatestScan?.(repo, branch);
+
+    let externalScanId: string;
+    let findings: CmFinding[];
+
+    if (cached) {
+      console.log(`[scan-handler] reusing latest completed scan ${cached.externalScanId} for ${repo.owner}/${repo.name}@${branch}`);
+      externalScanId = cached.externalScanId;
+      findings = await scanProvider.fetchResults(externalScanId);
+    } else {
+      const scanResult = await scanProvider.scan(repo, branch);
+      externalScanId = scanResult.externalScanId;
+      // Use embedded findings if scan() already parsed them (avoids second cx invocation)
+      findings = scanResult.findings ?? await scanProvider.fetchResults(externalScanId);
+    }
 
     await supabase
       .from("cm_scan")
       .update({ external_scan_id: externalScanId, branch_scanned: branch, current_step: "Fetching results..." })
       .eq("id", scanId);
-
-    // Use embedded findings if scan() already parsed them (avoids second cx invocation)
-    const findings = scanResult.findings ?? await scanProvider.fetchResults(externalScanId);
 
     for (const finding of findings) {
       await supabase.from("cm_finding").upsert(

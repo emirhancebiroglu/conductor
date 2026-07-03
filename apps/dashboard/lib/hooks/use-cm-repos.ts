@@ -11,8 +11,10 @@ type ReposPage = {
   limit: number;
 };
 
-function reposKey(page: number) {
-  return `/api/cm/repos?page=${page}&limit=${PAGE_LIMIT}`;
+function reposKey(page: number, search: string) {
+  const q = search.trim();
+  const searchParam = q ? `&search=${encodeURIComponent(q)}` : "";
+  return `/api/cm/repos?page=${page}&limit=${PAGE_LIMIT}${searchParam}`;
 }
 
 async function fetcher(url: string): Promise<ReposPage> {
@@ -21,8 +23,8 @@ async function fetcher(url: string): Promise<ReposPage> {
   return res.json();
 }
 
-export function useCmRepos(page = 0) {
-  const key = reposKey(page);
+export function useCmRepos(page = 0, search = "") {
+  const key = reposKey(page, search);
   const { data, error, isLoading, mutate } = useSWR(key, fetcher, {
     keepPreviousData: true,
     revalidateOnFocus: false,
@@ -40,4 +42,4 @@ export function useCmRepos(page = 0) {
   };
 }
 
-export const revalidateCmRepos = (page = 0) => globalMutate(reposKey(page));
+export const revalidateCmRepos = (page = 0, search = "") => globalMutate(reposKey(page, search));

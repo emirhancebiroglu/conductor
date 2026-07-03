@@ -40,8 +40,28 @@ async function main(): Promise<void> {
   console.log(`[cm-worker] scan provider: ${config.scanProvider.constructor.name}`);
   console.log(`[cm-worker] agent runner: ${config.agentRunner.constructor.name}`);
 
-  await boss.start();
-  console.log("[cm-worker] pg-boss started");
+  boss.on("error", (err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[cm-worker] pg-boss error: ${msg}`);
+  });
+
+  // Retry pg-boss start — DB may be unreachable momentarily (VPN, cold start, etc.)
+  const MAX_START_ATTEMPTS = 10;
+  const START_RETRY_MS = 15_000;
+  for (let attempt = 1; attempt <= MAX_START_ATTEMPTS; attempt++) {
+    try {
+      await boss.start();
+      console.log("[cm-worker] pg-boss started");
+      break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt === MAX_START_ATTEMPTS) {
+        throw new Error(`pg-boss failed to start after ${MAX_START_ATTEMPTS} attempts: ${msg}`);
+      }
+      console.warn(`[cm-worker] pg-boss start attempt ${attempt}/${MAX_START_ATTEMPTS} failed: ${msg}. Retrying in ${START_RETRY_MS / 1000}s...`);
+      await new Promise((resolve) => setTimeout(resolve, START_RETRY_MS));
+    }
+  }
 
   await setupScanQueue(boss, {
     retryLimit: DEFAULT_RETRY_LIMIT,
@@ -130,11 +150,13 @@ async function main(): Promise<void> {
 
   await updateWorkerStatus(supabase, "online");
 
+  let lastLoggedAutoModeState: boolean | null = null;
   const heartbeatTimer = setInterval(() => {
     void (async () => {
       const enabled = await isPipelineEnabled(supabase);
-      if (!enabled) {
-        console.log("[cm-worker] auto-mode disabled — manual scans only");
+      if (lastLoggedAutoModeState !== enabled) {
+        console.log(enabled ? "[cm-worker] auto-mode enabled" : "[cm-worker] auto-mode disabled — manual scans only");
+        lastLoggedAutoModeState = enabled;
       }
       await updateWorkerStatus(supabase, enabled ? "online" : "paused_manual", enabled ? undefined : "auto-mode disabled");
     })();
