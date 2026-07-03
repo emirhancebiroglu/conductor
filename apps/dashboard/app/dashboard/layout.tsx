@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
+import { SWRProvider } from "@/components/swr-provider";
 import type { User } from "@supabase/supabase-js";
 
 const FIXTURE_USER = { id: "test-user", email: "test@fixture.local" } as unknown as User;
@@ -31,12 +32,14 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen" style={{ backgroundColor: "var(--surface)" }}>
-      <Sidebar />
-      <div className="flex flex-col flex-1" style={{ marginLeft: "var(--sidebar-w)" }}>
-        <Header user={user} />
-        <main className="flex-1 p-6">{children}</main>
+    <SWRProvider>
+      <div className="flex min-h-screen" style={{ backgroundColor: "var(--surface)" }}>
+        <Sidebar />
+        <div className="flex flex-col flex-1" style={{ marginLeft: "var(--sidebar-w)" }}>
+          <Header user={user} />
+          <main className="flex-1 p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </SWRProvider>
   );
 }

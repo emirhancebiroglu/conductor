@@ -72,7 +72,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Exclude static assets and all /api/* routes (API routes self-authenticate with getUser())
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    String.raw`/((?!_next/static|_next/image|favicon\.ico|api/|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)`,
   ],
 };

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { CmPipelineForm } from "./cm-pipeline-form";
 import { CmReposTab } from "./cm-repos-tab";
 import { CmRunsTab } from "./cm-runs-tab";
@@ -14,8 +15,19 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "reports", label: "Reports" },
 ];
 
-export function CmClient() {
-  const [activeTab, setActiveTab] = useState<Tab>("pipeline");
+const VALID_TABS = new Set<string>(TABS.map((t) => t.key));
+
+function CmClientInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawTab = searchParams.get("tab") ?? "";
+  const activeTab: Tab = VALID_TABS.has(rawTab) ? (rawTab as Tab) : "pipeline";
+
+  const setTab = (tab: Tab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
 
   return (
     <div className="cm-page">
@@ -30,7 +42,7 @@ export function CmClient() {
         {TABS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => setTab(tab.key)}
             className="cm-tab"
             style={{
               color: activeTab === tab.key ? "var(--amber)" : "var(--text-secondary)",
@@ -107,5 +119,13 @@ export function CmClient() {
         }
       `}</style>
     </div>
+  );
+}
+
+export function CmClient() {
+  return (
+    <Suspense fallback={null}>
+      <CmClientInner />
+    </Suspense>
   );
 }

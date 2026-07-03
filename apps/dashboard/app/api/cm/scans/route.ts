@@ -21,7 +21,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("cm_scan")
-      .select("*, cm_repo(owner, name, default_branch)")
+      .select("id, repo_id, status, trigger, findings_total, findings_actionable, branch_scanned, current_step, pr_url, report_path, error, started_at, finished_at, created_at, cm_repo(owner, name, default_branch)")
       .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false });
 

@@ -29,32 +29,34 @@ export async function GET(_request: Request, { params }: RouteContext) {
       return NextResponse.json({ error: "Scan not found" }, { status: 404 });
     }
 
-    const findings = await supabase
-      .from("cm_finding")
-      .select("*")
-      .eq("scan_id", id) as unknown as { data: Record<string, unknown>[] | null };
+    // Fetch findings + runs in parallel (they are independent)
+    const [findingsResult, runsResult] = await Promise.all([
+      supabase
+        .from("cm_finding")
+        .select("id, severity, source, rule, package, current_version, fixed_version, fix_status, file, line, description")
+        .eq("scan_id", id) as unknown as Promise<{ data: Record<string, unknown>[] | null }>,
+      supabase
+        .from("runs")
+        .select("id, agent, model, status, created_at")
+        .eq("scan_id", id)
+        .order("created_at", { ascending: true }) as unknown as Promise<{ data: Record<string, unknown>[] | null }>,
+    ]);
 
-    const runs = await supabase
-      .from("runs")
-      .select("*")
-      .eq("scan_id", id)
-      .order("created_at", { ascending: true }) as unknown as { data: Record<string, unknown>[] | null };
-
-    const runIds = (runs.data ?? []).map((r) => r.id).filter(Boolean);
+    const runIds = (runsResult.data ?? []).map((r) => r.id).filter(Boolean);
 
     let usageLog: Record<string, unknown>[] = [];
     if (runIds.length > 0) {
       const ul = await supabase
         .from("usage_log")
-        .select("*")
+        .select("model, input_tokens, output_tokens, est_cost_usd")
         .in("run_id", runIds) as unknown as { data: Record<string, unknown>[] | null };
       usageLog = ul.data ?? [];
     }
 
     return NextResponse.json({
       scan: scan.data,
-      findings: findings.data ?? [],
-      runs: runs.data ?? [],
+      findings: findingsResult.data ?? [],
+      runs: runsResult.data ?? [],
       usageLog,
     });
   } catch (error: unknown) {

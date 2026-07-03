@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useCmRepos, PAGE_LIMIT } from "@/lib/hooks/use-cm-repos";
 
 type CmRepo = {
   id: string;
@@ -18,8 +19,11 @@ type CmRepo = {
 };
 
 export function CmReposTab() {
-  const [repos, setRepos] = useState<CmRepo[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const { repos: rawRepos, total, isLoading, mutate } = useCmRepos(page);
+  const repos = rawRepos as CmRepo[];
+  const totalPages = Math.ceil(total / PAGE_LIMIT);
+
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [isRunningSelected, setIsRunningSelected] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -28,20 +32,6 @@ export function CmReposTab() {
   const [addOwner, setAddOwner] = useState("");
   const [addName, setAddName] = useState("");
 
-  const fetchRepos = useCallback(async () => {
-    try {
-      const res = await fetch("/api/cm/repos");
-      const json = await res.json();
-      setRepos(Array.isArray(json) ? json : []);
-    } catch {
-      toast.error("Failed to load repos");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchRepos(); }, [fetchRepos]);
-
   const handleDiscover = async () => {
     setIsDiscovering(true);
     try {
@@ -49,7 +39,7 @@ export function CmReposTab() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Discovery failed");
       toast.success(`Discovered ${json.discovered} repos (${json.inserted} new)`);
-      await fetchRepos();
+      await mutate();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Discovery failed");
     } finally {
@@ -59,16 +49,18 @@ export function CmReposTab() {
 
   const toggleEnabled = async (repo: CmRepo) => {
     try {
+      await mutate((prev) => prev ? { ...prev, repos: prev.repos.map((r) => (r as CmRepo).id === repo.id ? { ...(r as CmRepo), enabled: !repo.enabled } : r) } : prev, false);
       const res = await fetch(`/api/cm/repos/${repo.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !repo.enabled }),
       });
       if (!res.ok) throw new Error("Toggle failed");
-      setRepos((prev) => prev.map((r) => (r.id === repo.id ? { ...r, enabled: !r.enabled } : r)));
       toast.success(`${repo.name} ${repo.enabled ? "disabled" : "enabled"}`);
     } catch {
       toast.error("Failed to toggle repo");
+    } finally {
+      await mutate();
     }
   };
 
@@ -82,22 +74,24 @@ export function CmReposTab() {
         body: JSON.stringify({ priority: newPriority }),
       });
       if (!res.ok) throw new Error("Update failed");
-      setRepos((prev) => prev.map((r) => (r.id === repo.id ? { ...r, priority: newPriority } : r)));
+      await mutate((prev) => prev ? { ...prev, repos: prev.repos.map((r) => (r as CmRepo).id === repo.id ? { ...(r as CmRepo), priority: newPriority } : r) } : prev, false);
       toast.success(`Priority updated for ${repo.name}`);
     } catch {
       toast.error("Failed to update priority");
+      await mutate();
     }
   };
 
   const deleteRepo = async (repo: CmRepo) => {
     if (!confirm(`Remove ${repo.name} from the pipeline?`)) return;
     try {
+      await mutate((prev) => prev ? { ...prev, repos: prev.repos.filter((r) => (r as CmRepo).id !== repo.id), total: prev.total - 1 } : prev, false);
       const res = await fetch(`/api/cm/repos/${repo.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
-      setRepos((prev) => prev.filter((r) => r.id !== repo.id));
       toast.success(`${repo.name} removed`);
     } catch {
       toast.error("Failed to remove repo");
+      await mutate();
     }
   };
 
@@ -162,7 +156,7 @@ export function CmReposTab() {
       setAddOwner("");
       setAddName("");
       setShowAddForm(false);
-      await fetchRepos();
+      await mutate();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to add repo");
     }
@@ -256,6 +250,29 @@ export function CmReposTab() {
         </div>
       )}
 
+      {totalPages > 1 && (
+        <div className="rt-pagination">
+          <button
+            className="rt-page-btn"
+            disabled={page === 0}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            ← Prev
+          </button>
+          <span className="rt-page-info">
+            {page + 1} / {totalPages}
+            <span style={{ color: "var(--text-dim)", marginLeft: "6px" }}>({total} repos)</span>
+          </span>
+          <button
+            className="rt-page-btn"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
       <style jsx>{`
         .rt-actions { display: flex; gap: 8px; margin-bottom: 16px; }
         .rt-btn { font-size: 12px; padding: 8px 20px; border: 1px solid var(--border); cursor: pointer; border-radius: 4px; }
@@ -284,6 +301,11 @@ export function CmReposTab() {
         .rt-action-btn { background: var(--surface-overlay); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; color: var(--text-secondary); transition: all 0.15s; }
         .rt-action-btn:hover { background: var(--amber-glow); color: var(--amber); }
         .rt-action-danger:hover { background: rgba(248,113,113,0.1); color: #f87171; }
+        .rt-pagination { display: flex; align-items: center; gap: 12px; justify-content: flex-end; margin-top: 10px; }
+        .rt-page-btn { background: var(--surface-overlay); border: 1px solid var(--border); padding: 5px 12px; font-size: 11px; color: var(--text-secondary); cursor: pointer; transition: all 0.12s; }
+        .rt-page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .rt-page-btn:not(:disabled):hover { color: var(--amber); border-color: var(--amber); }
+        .rt-page-info { font-family: var(--font-geist-mono), monospace; font-size: 11px; color: var(--text-secondary); }
       `}</style>
     </div>
   );

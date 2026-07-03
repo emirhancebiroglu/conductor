@@ -20,24 +20,32 @@ const PatchRepoSchema = z.object({
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+const PAGE_LIMIT = 50;
+
+export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const url = new URL(request.url);
+  const page = Math.max(0, Number.parseInt(url.searchParams.get("page") ?? "0", 10) || 0);
+  const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("limit") ?? String(PAGE_LIMIT), 10) || PAGE_LIMIT));
+  const from = page * limit;
 
   try {
     const kind = await getActiveWorkspaceKind();
     const workspaceId = await resolveWorkspaceId(supabase, kind);
 
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from("cm_repo")
-      .select("*")
+      .select("id, owner, name, default_branch, source, priority, enabled, run_config", { count: "exact" })
       .eq("workspace_id", workspaceId)
-      .order("priority", { ascending: true });
+      .order("priority", { ascending: true })
+      .range(from, from + limit - 1);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json(data ?? []);
+    return NextResponse.json({ repos: data ?? [], total: count ?? 0, page, limit });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Internal Server Error";
     return NextResponse.json({ error: msg }, { status: 500 });

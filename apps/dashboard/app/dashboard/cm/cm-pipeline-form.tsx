@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useCmPipeline } from "@/lib/hooks/use-cm-pipeline";
 
 type PipelineData = {
   id?: string;
@@ -64,40 +65,45 @@ function isValidCron(cron: string): boolean {
   return parts.every((p) => /^(\*|\d+|\d+\/\d+|\d+-\d+|\*\/\d+)$/.test(p));
 }
 
+function parsePipelineJson(json: unknown): PipelineData | null {
+  if (!json || typeof json !== "object" || !("id" in json)) return null;
+  const j = json as Record<string, unknown>;
+  return {
+    id: j.id as string,
+    enabled: (j.enabled as boolean) ?? false,
+    cron: (j.cron as string) ?? "0 0 * * *",
+    github_owner: (j.github_owner as string) ?? "",
+    github_token_env: (j.github_token_env as string) ?? "GITHUB_TOKEN_WORK",
+    discovery_name_prefix: (j.discovery_name_prefix as string) ?? "ms",
+    discovery_config_path: (j.discovery_config_path as string) ?? ".github/checkmarx_scan.yml",
+    branch_exclude_pattern: (j.branch_exclude_pattern as string) ?? "*kubernetes*,*k8s*",
+    severity_threshold: (j.severity_threshold as string[]) ?? ["CRITICAL", "HIGH"],
+    sca_test_policy: (j.sca_test_policy as string) ?? "skip-minor",
+    fix_branch: (j.fix_branch as string) ?? "checkmarx-auto",
+    report_dir: (j.report_dir as string) ?? "D:/checkmarx-reports",
+    retry_cooldown_seconds: (j.retry_cooldown_seconds as number) ?? 1800,
+    max_fix_attempts: (j.max_fix_attempts as number) ?? 2,
+  };
+}
+
 export function CmPipelineForm() {
+  const { pipeline: rawPipeline, isLoading } = useCmPipeline();
   const [data, setData] = useState<PipelineData>(DEFAULT_PIPELINE);
   const [original, setOriginal] = useState<PipelineData>(DEFAULT_PIPELINE);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const initializedRef = useRef(false);
 
+  // Sync from SWR on first load; don't override while user is editing
   useEffect(() => {
-    fetch("/api/cm/pipeline")
-      .then((r) => r.json())
-      .then((json) => {
-        if (json && json.id) {
-          const d: PipelineData = {
-            id: json.id,
-            enabled: json.enabled ?? false,
-            cron: json.cron ?? "0 0 * * *",
-            github_owner: json.github_owner ?? "",
-            github_token_env: json.github_token_env ?? "GITHUB_TOKEN_WORK",
-            discovery_name_prefix: json.discovery_name_prefix ?? "ms",
-            discovery_config_path: json.discovery_config_path ?? ".github/checkmarx_scan.yml",
-            branch_exclude_pattern: json.branch_exclude_pattern ?? "*kubernetes*,*k8s*",
-            severity_threshold: json.severity_threshold ?? ["CRITICAL", "HIGH"],
-            sca_test_policy: json.sca_test_policy ?? "skip-minor",
-            fix_branch: json.fix_branch ?? "checkmarx-auto",
-            report_dir: json.report_dir ?? "D:/checkmarx-reports",
-            retry_cooldown_seconds: json.retry_cooldown_seconds ?? 1800,
-            max_fix_attempts: json.max_fix_attempts ?? 2,
-          };
-          setData(d);
-          setOriginal(d);
-        }
-        setIsLoading(false);
-      })
-      .catch(() => setIsLoading(false));
-  }, []);
+    if (!initializedRef.current && rawPipeline) {
+      const parsed = parsePipelineJson(rawPipeline);
+      if (parsed) {
+        setData(parsed);
+        setOriginal(parsed);
+        initializedRef.current = true;
+      }
+    }
+  }, [rawPipeline]);
 
   const isDirty = JSON.stringify(data) !== JSON.stringify(original);
 
@@ -142,7 +148,7 @@ export function CmPipelineForm() {
 
   const cronInvalid = data.cron && !isValidCron(data.cron);
 
-  if (isLoading) {
+  if (isLoading && !initializedRef.current) {
     return <div className="cm-placeholder" style={{ padding: "40px", textAlign: "center", color: "var(--text-dim)" }}>Loading pipeline settings...</div>;
   }
 

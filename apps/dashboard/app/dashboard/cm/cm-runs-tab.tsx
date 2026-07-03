@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useCmScans, revalidateCmScans } from "@/lib/hooks/use-cm-scans";
+import { useCmScanDetail, revalidateCmScanDetail } from "@/lib/hooks/use-cm-scan-detail";
 
 type CmRepo = {
   owner: string;
@@ -103,7 +105,6 @@ function SevBadge({ sev }: { sev: string }) {
   );
 }
 
-
 function formatDuration(start: string | null, end: string | null): string {
   if (!start) return "—";
   const s = new Date(start).getTime();
@@ -131,73 +132,39 @@ function formatTime(iso: string | null): string {
 }
 
 function groupFindings(findings: CmFinding[]) {
-  const sast = findings.filter(f => f.source === "sast").sort((a, b) => {
-    const order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-    return order.indexOf(a.severity) - order.indexOf(b.severity);
-  });
-  const sca = findings.filter(f => f.source === "sca").sort((a, b) => {
-    const order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-    return order.indexOf(a.severity) - order.indexOf(b.severity);
-  });
+  const order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+  const sast = findings.filter(f => f.source === "sast").sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity));
+  const sca = findings.filter(f => f.source === "sca").sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity));
   return { sast, sca };
 }
 
 export function CmRunsTab() {
-  const [scans, setScans] = useState<CmScan[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedScan, setSelectedScan] = useState<ScanDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const { scans: rawScans, isLoading } = useCmScans();
+  const scans = rawScans as CmScan[];
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { detail: rawDetail, isLoading: detailLoading } = useCmScanDetail(selectedId);
+  const selectedScan = rawDetail as ScanDetail | null;
+
   const [findingsTab, setFindingsTab] = useState<"all" | "sast" | "sca">("all");
-  const realtimeRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
 
-  const fetchScans = useCallback(async () => {
-    try {
-      const res = await fetch("/api/cm/scans");
-      const json = await res.json();
-      setScans(Array.isArray(json) ? json : []);
-    } catch { /* ignore */ }
-    finally { setIsLoading(false); }
-  }, []);
-
-  // Supabase Realtime for live scan updates
+  // Realtime: revalidate scans list on any cm_scan change
   useEffect(() => {
-    fetchScans();
     const supabase = createClient();
     const channel = supabase
       .channel("cm_scan_changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "cm_scan" }, () => {
-        void fetchScans();
+        void revalidateCmScans();
+        if (selectedId) void revalidateCmScanDetail(selectedId);
       })
       .subscribe();
-    realtimeRef.current = channel;
     return () => { void supabase.removeChannel(channel); };
-  }, [fetchScans]);
+  }, [selectedId]);
 
-  // Refresh detail panel when a live update hits the selected scan
-  const openDetail = useCallback(async (scanId: string) => {
-    setDetailLoading(true);
+  const openDetail = useCallback((scanId: string) => {
+    setSelectedId(scanId);
     setFindingsTab("all");
-    try {
-      const res = await fetch(`/api/cm/scans/${scanId}`);
-      const json = await res.json();
-      setSelectedScan(json as ScanDetail);
-    } catch { setSelectedScan(null); }
-    finally { setDetailLoading(false); }
   }, []);
-
-  // Auto-refresh detail when realtime fires for selected scan
-  useEffect(() => {
-    if (!selectedScan) return;
-    const id = selectedScan.scan.id;
-    const supabase = createClient();
-    const ch = supabase
-      .channel(`cm_scan_detail_${id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cm_scan", filter: `id=eq.${id}` }, () => {
-        void openDetail(id);
-      })
-      .subscribe();
-    return () => { void supabase.removeChannel(ch); };
-  }, [selectedScan, selectedScan?.scan.id, openDetail]);
 
   const activeScans = scans.filter(s => !["done", "failed", "scan_failed", "scan_done"].includes(s.status));
 
@@ -225,7 +192,7 @@ export function CmRunsTab() {
         <div className="runs-list-panel" style={{ maxWidth: selectedScan ? "480px" : "100%", flex: selectedScan ? "0 0 480px" : "1" }}>
           <div className="runs-toolbar">
             <span className="runs-toolbar-count">{scans.length} scans</span>
-            <button onClick={fetchScans} className="rn-icon-btn" title="Refresh">
+            <button onClick={() => revalidateCmScans()} className="rn-icon-btn" title="Refresh">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M10.5 6A4.5 4.5 0 1 1 6 1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M6 1.5 8 3.5 6 5.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
           </div>
@@ -243,7 +210,7 @@ export function CmRunsTab() {
           ) : (
             <div className="rn-list">
               {scans.map((scan, i) => {
-                const isActive = selectedScan?.scan.id === scan.id;
+                const isActive = selectedId === scan.id;
                 const isRunning = !["done", "failed", "scan_failed", "scan_done", "pr_opened"].includes(scan.status);
                 return (
                   <div
@@ -312,29 +279,33 @@ export function CmRunsTab() {
         </div>
 
         {/* Detail panel */}
-        {selectedScan && (
+        {selectedId && (
           <div className="rn-detail-panel">
             <div className="rn-detail-head">
               <div>
-                <div className="rn-detail-eyebrow">
-                  {selectedScan.scan.cm_repo
-                    ? `${selectedScan.scan.cm_repo.owner} / ${selectedScan.scan.cm_repo.name}`
-                    : selectedScan.scan.repo_id.slice(0, 8)}
-                </div>
-                <div className="rn-detail-branch">
-                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.4 }}><circle cx="3" cy="3" r="1.5" stroke="currentColor" strokeWidth="1.2"/><circle cx="9" cy="9" r="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M3 4.5V6a3 3 0 0 0 3 3h0" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-                  {selectedScan.scan.branch_scanned ?? "—"}
-                </div>
+                {selectedScan ? (
+                  <>
+                    <div className="rn-detail-eyebrow">
+                      {selectedScan.scan.cm_repo
+                        ? `${selectedScan.scan.cm_repo.owner} / ${selectedScan.scan.cm_repo.name}`
+                        : selectedScan.scan.repo_id.slice(0, 8)}
+                    </div>
+                    <div className="rn-detail-branch">
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.4 }}><circle cx="3" cy="3" r="1.5" stroke="currentColor" strokeWidth="1.2"/><circle cx="9" cy="9" r="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M3 4.5V6a3 3 0 0 0 3 3h0" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                      {selectedScan.scan.branch_scanned ?? "—"}
+                    </div>
+                  </>
+                ) : <div className="rn-detail-eyebrow">Loading…</div>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <StatusBadge status={selectedScan.scan.status} />
-                <button onClick={() => setSelectedScan(null)} className="rn-icon-btn" title="Close">
+                {selectedScan && <StatusBadge status={selectedScan.scan.status} />}
+                <button onClick={() => setSelectedId(null)} className="rn-icon-btn" title="Close">
                   <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 1l9 9M10 1L1 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
                 </button>
               </div>
             </div>
 
-            {detailLoading ? (
+            {detailLoading || !selectedScan ? (
               <div className="rn-placeholder" style={{ padding: "60px 0" }}>
                 <span className="rn-loading-dot" /><span className="rn-loading-dot" style={{ animationDelay: "0.15s" }} /><span className="rn-loading-dot" style={{ animationDelay: "0.3s" }} />
               </div>
