@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScanProvider, AgentRunner } from "@conductor/cm-adapters";
 import { GitOps } from "@conductor/cm-adapters";
@@ -25,7 +27,6 @@ type CmRepoRow = {
   owner: string;
   name: string;
   default_branch: string;
-  run_config: Record<string, unknown> | null;
   pipeline_id: string;
 };
 
@@ -33,6 +34,17 @@ type RunConfig = {
   buildCommand?: string;
   testCommand?: string;
 };
+
+function autoDetectRunConfig(workDir: string): RunConfig {
+  if (existsSync(join(workDir, "pom.xml"))) {
+    return { buildCommand: "mvn install -DskipTests -q", testCommand: "mvn test -q" };
+  }
+  if (existsSync(join(workDir, "package.json"))) {
+    return { buildCommand: "npm install --prefer-offline", testCommand: "npm test --if-present" };
+  }
+  console.log(`[fix] autoDetectRunConfig: no pom.xml or package.json found in ${workDir}, skipping build/test`);
+  return {};
+}
 
 type CmPipelineRow = {
   sca_test_policy: string;
@@ -136,7 +148,7 @@ export async function handleFix(
 
   const repoResp = await supabase
     .from("cm_repo")
-    .select("*")
+    .select("id, owner, name, default_branch, pipeline_id")
     .eq("id", scan.repo_id)
     .single() as unknown as { data: CmRepoRow | null; error: { message: string } | null };
 
@@ -145,16 +157,6 @@ export async function handleFix(
   }
 
   const repo = repoResp.data;
-  const runConfig = (repo.run_config ?? {}) as RunConfig;
-
-  if (!runConfig.buildCommand) {
-    console.log(`[fix] scan ${scanId}: run_config missing buildCommand, setting run_blocked`);
-    await supabase
-      .from("cm_scan")
-      .update({ status: "run_blocked", current_step: "Awaiting run_config: provide build command to proceed" })
-      .eq("id", scanId);
-    return;
-  }
 
   // Load pipeline config
   const pipelineResp = await supabase
@@ -189,6 +191,9 @@ export async function handleFix(
 
   try {
     await ops.createBranch(workDir, fixBranch);
+
+    const runConfig = autoDetectRunConfig(workDir);
+    console.log(`[fix] scan ${scanId}: runConfig=${JSON.stringify(runConfig)}`);
 
     await supabase
       .from("cm_scan")

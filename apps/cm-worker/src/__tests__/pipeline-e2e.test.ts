@@ -19,7 +19,6 @@ import { handleScan } from "../handlers/scan.js";
 import { handleFix } from "../handlers/fix.js";
 import { handleRescan } from "../handlers/rescan.js";
 import { handlePushAndPR } from "../handlers/push-pr.js";
-import { handleReport } from "../handlers/report.js";
 import { MockScanProvider, StubRunner } from "@conductor/cm-adapters";
 import type { ScanProvider } from "@conductor/cm-adapters";
 
@@ -150,7 +149,7 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
       ]);
 
       seed("cm_repo", [
-        { id: repoId, pipeline_id: pipelineId, workspace_id: wsId, owner: "test", name: REPO_NAME, default_branch: "main", source: "auto", priority: 10, enabled: true, run_config: { buildCommand: "echo ok" } },
+        { id: repoId, pipeline_id: pipelineId, workspace_id: wsId, owner: "test", name: REPO_NAME, default_branch: "main", source: "auto", priority: 10, enabled: true },
       ]);
 
       seed("cm_scan", [

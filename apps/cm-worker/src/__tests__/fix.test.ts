@@ -21,7 +21,7 @@ function createMockRepoRow(overrides: Record<string, unknown> = {}) {
     owner: "test-owner",
     name: "ms-test-repo",
     default_branch: "main",
-    run_config: { buildCommand: "npm install && npm test" },
+    pipeline_id: "pipeline-001",
     ...overrides,
   };
 }
@@ -83,32 +83,5 @@ describe("handleFix", () => {
     await handleFix(supabase, scanProvider, agentRunner, "scan-001");
 
     expect(scan).not.toHaveBeenCalled();
-  });
-
-  it("sets run_blocked when run_config is missing", async () => {
-    const scanRow = createMockScanRow();
-    const repoRow = createMockRepoRow({ run_config: null });
-    const updates: Record<string, unknown>[] = [];
-    const supabase = mockScanSupabase(scanRow, repoRow, updates);
-    const { scanProvider, agentRunner } = makeProviders();
-
-    await handleFix(supabase, scanProvider, agentRunner, "scan-001");
-
-    const runBlockedUpdate = updates.find((u) => u.status === "run_blocked");
-    expect(runBlockedUpdate).toBeDefined();
-    expect(runBlockedUpdate?.current_step).toContain("run_config");
-  });
-
-  it("sets run_blocked when run_config lacks buildCommand", async () => {
-    const scanRow = createMockScanRow();
-    const repoRow = createMockRepoRow({ run_config: { testCommand: "npm test" } });
-    const updates: Record<string, unknown>[] = [];
-    const supabase = mockScanSupabase(scanRow, repoRow, updates);
-    const { scanProvider, agentRunner } = makeProviders();
-
-    await handleFix(supabase, scanProvider, agentRunner, "scan-001");
-
-    const runBlockedUpdate = updates.find((u) => u.status === "run_blocked");
-    expect(runBlockedUpdate).toBeDefined();
   });
 });
