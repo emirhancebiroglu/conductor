@@ -15,5 +15,6 @@ export function createPgBoss(): PgBoss {
   if (!connectionString) {
     throw new Error("Missing database connection string: CM_DATABASE_URL");
   }
-  return new PgBoss(connectionString);
+  // Supabase pooler uses a self-signed cert chain — disable hostname verification.
+  return new PgBoss({ connectionString, ssl: { rejectUnauthorized: false } });
 }
