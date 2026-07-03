@@ -15,7 +15,6 @@ type CmRepo = {
   source: string;
   priority: number;
   enabled: boolean;
-  run_config: Record<string, unknown> | null;
 };
 
 export function CmReposTab() {

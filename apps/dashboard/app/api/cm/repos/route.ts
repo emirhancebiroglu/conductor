@@ -15,7 +15,6 @@ const PatchRepoSchema = z.object({
   priority: z.number().int().optional(),
   enabled: z.boolean().optional(),
   default_branch: z.string().optional(),
-  run_config: z.record(z.unknown()).nullable().optional(),
 });
 
 export const dynamic = "force-dynamic";
@@ -38,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error, count } = await supabase
       .from("cm_repo")
-      .select("id, owner, name, default_branch, source, priority, enabled, run_config", { count: "exact" })
+      .select("id, owner, name, default_branch, source, priority, enabled", { count: "exact" })
       .eq("workspace_id", workspaceId)
       .order("priority", { ascending: true })
       .range(from, from + limit - 1);

@@ -51,7 +51,6 @@ const validRepoRow = {
   source: "auto",
   priority: 50,
   enabled: true,
-  run_config: null,
   last_scan_id: null,
   created_at: "2026-06-03T12:00:00Z",
   updated_at: "2026-06-03T12:00:00Z",
