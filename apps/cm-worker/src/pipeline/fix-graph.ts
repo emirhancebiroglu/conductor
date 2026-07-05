@@ -199,10 +199,12 @@ async function rescanFixBranch(
   repo: { owner: string; name: string },
   fixBranch: string,
 ): Promise<{ clean: boolean }> {
-  // why: validation rescan goes through the REST API exclusively (no `cx`
-  // subprocess) — faster and avoids the CLI's own result-file/output parsing
-  // path for what's purely a pass/fail check. Falls back to the CLI-based
-  // scan() only if a provider doesn't implement rescanRest (e.g. test doubles).
+  // why: rescanRest still submits via the CLI (preserves --sca-resolver, required
+  // for accurate Maven/Gradle transitive dependency coverage — confirmed via a
+  // live scan that REST-only git-submit silently drops most such findings) but
+  // reads results back via REST (/api/results) instead of a second `cx`
+  // subprocess. Falls back to the CLI-based scan() only if a provider doesn't
+  // implement rescanRest (e.g. test doubles).
   const scanResult = scanProvider.rescanRest
     ? await scanProvider.rescanRest({ owner: repo.owner, name: repo.name }, fixBranch)
     : await scanProvider.scan({ owner: repo.owner, name: repo.name }, fixBranch);

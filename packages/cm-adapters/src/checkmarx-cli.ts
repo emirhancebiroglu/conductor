@@ -311,118 +311,54 @@ export class CheckmarxCliProvider implements ScanProvider {
   }
 
   /**
-   * Submits and waits for a fresh scan entirely via the Checkmarx One REST
-   * API — no `cx` CLI subprocess. Used only by the fix-branch validation
-   * rescan (see fix-graph.ts's rescanFixBranch), not the initial discovery
-   * scan (which keeps using the CLI-based scan() path unchanged).
+   * Submits a fresh scan via the existing CLI path (scan() — this keeps the
+   * `--sca-resolver` integration intact, which is required for accurate
+   * Maven/Gradle transitive dependency coverage: ScaResolver runs locally
+   * and `cx` itself translates its output into Checkmarx One's format, a
+   * translation this class has no independent way to reproduce). Once the
+   * scan completes, results are read back via the REST `/api/results`
+   * endpoint instead of the CLI's `cx results show` — this is the part that
+   * legitimately benefits from being REST-based (no second subprocess just
+   * to re-fetch what was already submitted).
+   *
+   * Confirmed via a live scan against a real repo: a REST-only git-submit
+   * (POST /api/scans with type:"git") does NOT run ScaResolver server-side
+   * and silently drops most Maven/Gradle SCA findings (18 vs 94 on the same
+   * repo/branch in a real comparison) — so the CLI submission is retained
+   * deliberately, not out of caution.
    */
   async rescanRest(
     repo: { owner: string; name: string },
     branch: string,
   ): Promise<ScanResult> {
-    const projectName = `${repo.owner}/${repo.name}`;
-
-    const token = await this.getAccessToken();
-    if (!token) {
-      throw new CheckmarxScanError(
-        "Cannot use REST rescan: no access token (CX_BASE_AUTH_URI not configured or token exchange failed)",
-        "system_fail",
-      );
-    }
-
-    const projectId = await this.findProjectId(projectName);
-    if (!projectId) {
-      throw new CheckmarxScanError(`REST rescan: project not found for ${projectName}`, "system_fail");
-    }
-
-    const repoUrl = `https://x-access-token:${this.githubToken}@github.com/${repo.owner}/${repo.name}.git`;
-
-    console.log(`[cx-rest] submitting rescan for ${projectName}@${branch}`);
-    const submitResponse = await fetch(`${this.baseUri.replace(/\/$/, "")}/api/scans`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        project: { id: projectId },
-        type: "git",
-        handler: { repoUrl, branch },
-        config: [{ type: "sast", value: {} }, { type: "sca", value: {} }],
-      }),
-    });
-
-    if (!submitResponse.ok) {
-      const body = await submitResponse.text().catch(() => "");
-      throw new CheckmarxScanError(
-        `REST rescan submit failed (${submitResponse.status}): ${body.slice(0, 500)}`,
-        "scan_failed",
-      );
-    }
-
-    const submitted = await submitResponse.json() as { id?: string; ID?: string };
-    const scanId = submitted.id ?? submitted.ID;
-    if (!scanId) {
-      throw new CheckmarxScanError("REST rescan: no scan ID in submit response", "scan_failed");
-    }
-
-    console.log(`[cx-rest] scan ${scanId} submitted, polling for completion...`);
-
-    const pollIntervalMs = 10_000;
-    const pollTimeoutMs = 20 * 60_000;
-    const deadline = Date.now() + pollTimeoutMs;
-
-    while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-
-      const statusResponse = await fetch(`${this.baseUri.replace(/\/$/, "")}/api/scans/${scanId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!statusResponse.ok) continue;
-
-      const statusBody = await statusResponse.json() as { status?: string };
-      const status = statusBody.status;
-      console.log(`[cx-rest] scan ${scanId} status: ${status}`);
-
-      if (status === "Completed") {
-        const findings = await this.fetchResultsRest(scanId);
-        return { externalScanId: scanId, findings };
-      }
-      if (status === "Failed" || status === "Canceled" || status === "Partial") {
-        throw new CheckmarxScanError(`REST rescan: scan ${scanId} ended with status ${status}`, "scan_failed");
-      }
-    }
-
-    throw new CheckmarxScanError(`REST rescan: scan ${scanId} did not complete within ${pollTimeoutMs}ms`, "scan_failed");
+    const { externalScanId } = await this.scan(repo, branch);
+    const findings = await this.fetchResultsRest(externalScanId);
+    return { externalScanId, findings };
   }
 
   /**
-   * Fetches SAST + SCA results for a completed scan entirely via REST
-   * endpoints (GET /api/sast-results, GET /api/sca results export) — the
-   * REST-only counterpart to fetchResults()'s `cx results show` CLI call.
+   * Fetches all scanner results (SAST + SCA together) for a completed scan
+   * via the REST "All Scanners Results Service" — GET /api/results?scan-id=.
+   * Confirmed via a live scan: response shape is `{results: [...], totalCount}`
+   * where each result already carries `type: "sast"|"sca"`, identical to what
+   * `cx results show` returns — parseCheckmarxResults() needs no changes.
    */
   private async fetchResultsRest(scanId: string): Promise<CmFinding[]> {
     const token = await this.getAccessToken();
     if (!token) return [];
 
-    const headers = { Authorization: `Bearer ${token}` };
     const base = this.baseUri.replace(/\/$/, "");
+    const resp = await fetch(`${base}/api/results?scan-id=${encodeURIComponent(scanId)}&limit=1000`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-    const [sastResp, scaResp] = await Promise.all([
-      fetch(`${base}/api/sast-results?scan-id=${encodeURIComponent(scanId)}`, { headers }),
-      fetch(`${base}/api/sca/results?scan-id=${encodeURIComponent(scanId)}`, { headers }),
-    ]);
+    if (!resp.ok) {
+      console.warn(`[cx-rest] /api/results fetch failed (${resp.status}) for scan ${scanId}`);
+      return [];
+    }
 
-    const sastResultsRaw = sastResp.ok ? ((await sastResp.json() as { results?: Record<string, unknown>[] })?.results ?? []) : [];
-    const scaResultsRaw = scaResp.ok ? ((await scaResp.json() as { results?: Record<string, unknown>[] })?.results ?? []) : [];
-
-    if (!sastResp.ok) console.warn(`[cx-rest] sast-results fetch failed (${sastResp.status}) for scan ${scanId}`);
-    if (!scaResp.ok) console.warn(`[cx-rest] sca/results fetch failed (${scaResp.status}) for scan ${scanId}`);
-
-    // why: per-endpoint results don't carry a "type" discriminator the way
-    // the combined `cx results show` CLI output does — parseCheckmarxResults
-    // switches on r.type, so it must be stamped per source here.
-    const sastResults = sastResultsRaw.map((r) => ({ ...r, type: "sast" }));
-    const scaResults = scaResultsRaw.map((r) => ({ ...r, type: "sca" }));
-
-    return parseCheckmarxResults({ results: [...sastResults, ...scaResults] });
+    const json = await resp.json() as unknown;
+    return parseCheckmarxResults(json);
   }
 
   async fetchResults(externalScanId: string): Promise<CmFinding[]> {

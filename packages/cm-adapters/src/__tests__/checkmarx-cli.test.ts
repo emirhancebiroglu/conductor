@@ -264,20 +264,18 @@ describe("CheckmarxCliProvider", () => {
   describe("rescanRest", () => {
     const MOCK_ENV_WITH_AUTH = { ...MOCK_ENV, CX_BASE_AUTH_URI: "https://iam.example.com" };
     const TOKEN_RESPONSE = { ok: true, json: () => Promise.resolve({ access_token: "tok-abc", expires_in: 600 }) };
-    const PROJECTS_RESPONSE = { ok: true, json: () => Promise.resolve([{ id: "proj-123", name: "test-owner/ms-test-repo" }]) };
-    const SUBMIT_RESPONSE = { ok: true, json: () => Promise.resolve({ id: "rescan-999" }) };
-    const RUNNING_STATUS_RESPONSE = { ok: true, json: () => Promise.resolve({ status: "Running" }) };
-    const COMPLETED_STATUS_RESPONSE = { ok: true, json: () => Promise.resolve({ status: "Completed" }) };
-    const SAST_RESULTS_RESPONSE = {
+    // Real Checkmarx One "All Scanners Results Service" shape, confirmed against
+    // a live scan: GET /api/results?scan-id=... returns {results, totalCount},
+    // each result already carrying a "type" discriminator — identical to what
+    // `cx results show` returns, so parseCheckmarxResults() needs no branching.
+    const ALL_RESULTS_RESPONSE = {
       ok: true,
       json: () => Promise.resolve({
-        results: [{ id: "sast-1", severity: "HIGH", data: { queryName: "SQL_Injection", nodes: [{ fileName: "a.ts", line: 5 }] } }],
-      }),
-    };
-    const SCA_RESULTS_RESPONSE = {
-      ok: true,
-      json: () => Promise.resolve({
-        results: [{ id: "CVE-2024-1234", severity: "CRITICAL", data: { packageName: "lodash", packageVersion: "4.17.20", fixedVersion: "4.17.21" } }],
+        totalCount: 2,
+        results: [
+          { type: "sast", id: "sast-1", severity: "HIGH", data: { queryName: "SQL_Injection", nodes: [{ fileName: "a.ts", line: 5 }] } },
+          { type: "sca", id: "CVE-2024-1234", severity: "CRITICAL", data: { packageName: "lodash", packageVersion: "4.17.20", fixedVersion: "4.17.21" } },
+        ],
       }),
     };
 
@@ -286,58 +284,48 @@ describe("CheckmarxCliProvider", () => {
     beforeEach(() => {
       mockFetch = vi.fn();
       vi.stubGlobal("fetch", mockFetch);
-      vi.useFakeTimers();
     });
 
     afterEach(() => {
       vi.unstubAllGlobals();
-      vi.useRealTimers();
     });
 
-    it("submits via REST, polls until completed, and fetches SAST+SCA results via REST — no cx subprocess", async () => {
+    it("submits via the existing CLI scan() (preserving --sca-resolver), then reads results back via REST /api/results", async () => {
+      mockExeca.mockResolvedValueOnce({ stdout: MOCK_SCAN_STDOUT, exitCode: 0 });
       mockFetch
         .mockResolvedValueOnce(TOKEN_RESPONSE)
-        .mockResolvedValueOnce(PROJECTS_RESPONSE)
-        .mockResolvedValueOnce(SUBMIT_RESPONSE)
-        .mockResolvedValueOnce(RUNNING_STATUS_RESPONSE)
-        .mockResolvedValueOnce(COMPLETED_STATUS_RESPONSE)
-        .mockResolvedValueOnce(SAST_RESULTS_RESPONSE)
-        .mockResolvedValueOnce(SCA_RESULTS_RESPONSE);
+        .mockResolvedValueOnce(ALL_RESULTS_RESPONSE);
 
       const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
-      const resultPromise = provider.rescanRest({ owner: "test-owner", name: "ms-test-repo" }, "checkmarx-auto");
+      const result = await provider.rescanRest({ owner: "test-owner", name: "ms-test-repo" }, "checkmarx-auto");
 
-      // let the submit + first poll tick happen, then advance past the poll interval twice
-      await vi.advanceTimersByTimeAsync(10_000);
-      await vi.advanceTimersByTimeAsync(10_000);
-      const result = await resultPromise;
+      // scan() itself is still the CLI path — confirms ScaResolver integration is untouched.
+      expect(mockExeca).toHaveBeenCalledTimes(1);
+      const [cmd, args] = mockExeca.mock.calls[0] as [string, string[]];
+      expect(cmd).toBe("cx");
+      expect(args).toContain("--branch");
+      expect(args).toContain("checkmarx-auto");
 
-      expect(mockExeca).not.toHaveBeenCalled();
-      expect(result.externalScanId).toBe("rescan-999");
+      expect(result.externalScanId).toBe("scan-abc-123");
       expect(result.findings).toHaveLength(2);
       expect(result.findings?.some((f) => f.source === "sast")).toBe(true);
       expect(result.findings?.some((f) => f.source === "sca")).toBe(true);
 
-      const submitCall = mockFetch.mock.calls[2] as [string, RequestInit];
-      expect(submitCall[0]).toContain("/api/scans");
-      expect(submitCall[1]?.method).toBe("POST");
-      const submitBody = JSON.parse(submitCall[1]?.body as string) as { handler?: { branch?: string } };
-      expect(submitBody.handler?.branch).toBe("checkmarx-auto");
+      const resultsCall = mockFetch.mock.calls[1] as [string, RequestInit];
+      expect(resultsCall[0]).toContain("/api/results");
+      expect(resultsCall[0]).toContain("scan-id=scan-abc-123");
     });
 
-    it("throws if the scan ends with a non-completed terminal status", async () => {
+    it("returns an empty finding list (does not throw) when /api/results fetch fails", async () => {
+      mockExeca.mockResolvedValueOnce({ stdout: MOCK_SCAN_STDOUT, exitCode: 0 });
       mockFetch
         .mockResolvedValueOnce(TOKEN_RESPONSE)
-        .mockResolvedValueOnce(PROJECTS_RESPONSE)
-        .mockResolvedValueOnce(SUBMIT_RESPONSE)
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ status: "Failed" }) });
+        .mockResolvedValueOnce({ ok: false, status: 403, text: () => Promise.resolve("Forbidden") });
 
       const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
-      const resultPromise = provider.rescanRest({ owner: "test-owner", name: "ms-test-repo" }, "checkmarx-auto");
+      const result = await provider.rescanRest({ owner: "test-owner", name: "ms-test-repo" }, "checkmarx-auto");
 
-      const assertion = expect(resultPromise).rejects.toThrow(/ended with status Failed/);
-      await vi.advanceTimersByTimeAsync(10_000);
-      await assertion;
+      expect(result.findings).toEqual([]);
     });
   });
 
