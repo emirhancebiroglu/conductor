@@ -40,9 +40,18 @@ export class GitOps {
     await execa("git", ["commit", "-m", message], { cwd: dir });
   }
 
-  async push(dir: string, branch: string): Promise<void> {
+  /**
+   * why: force is opt-in for a reason — only safe for branches this pipeline
+   * exclusively owns (the auto-generated fix branch, re-cloned from scratch
+   * every attempt). Without it, any pre-existing remote commit on that branch
+   * (from a prior run) permanently rejects every future push as non-fast-forward,
+   * since each attempt re-clones from the base branch, not from the fix branch.
+   */
+  async push(dir: string, branch: string, options: { force?: boolean } = {}): Promise<void> {
     this.ensureUnderTempRoot(dir);
-    await execa("git", ["push", "origin", branch], { cwd: dir, timeout: 60_000 });
+    const args = ["push", "origin", branch];
+    if (options.force) args.push("--force");
+    await execa("git", args, { cwd: dir, timeout: 60_000 });
   }
 
   async pushBranch(dir: string, branch: string): Promise<void> {

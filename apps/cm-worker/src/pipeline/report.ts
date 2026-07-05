@@ -27,7 +27,19 @@ type CmFindingRow = {
   fixed_version: string | null;
   fix_status: string;
   fix_notes: string | null;
+  upgrade_impact: string | null;
+  file: string | null;
 };
+
+function deriveAnalystTestNote(f: CmFindingRow): string {
+  if (f.source === "sca") {
+    if (f.upgrade_impact === "MAJOR") {
+      return `Major version bump — analyst should test functionality relying on ${f.package ?? "this package"} (check for breaking API changes; see reason/what-was-done above).`;
+    }
+    return "No need — minor/mid upgrade, no manual test required.";
+  }
+  return `Verify ${f.file ?? "the affected code path"} still behaves correctly after the fix (${f.rule ?? "this finding"}).`;
+}
 
 export async function generatePipelineReport(
   supabase: SupabaseClient,
@@ -53,20 +65,31 @@ export async function generatePipelineReport(
 
   const findingsResp = await supabase
     .from("cm_finding")
-    .select("severity, source, rule, package, current_version, fixed_version, fix_status, fix_notes")
+    .select("severity, source, rule, package, current_version, fixed_version, fix_status, fix_notes, upgrade_impact, file")
     .eq("scan_id", scanId) as unknown as { data: CmFindingRow[] | null };
 
   const rawFindings = findingsResp.data ?? [];
 
-  const findings = rawFindings.map((f) => ({
-    severity: f.severity,
-    source: f.source,
-    rule: f.rule,
-    package: f.package,
-    currentVersion: f.current_version,
-    fixedVersion: f.fixed_version,
-    fixStatus: f.fix_status,
-  }));
+  const findings = rawFindings.map((f) => {
+    const isDecided = f.fix_status === "skipped" || f.fix_status === "failed" || f.fix_status === "needs_human";
+    return {
+      severity: f.severity,
+      source: f.source,
+      rule: f.rule,
+      package: f.package,
+      currentVersion: f.current_version,
+      fixedVersion: f.fixed_version,
+      fixStatus: f.fix_status,
+      skipReason: isDecided ? f.fix_notes : null,
+      whatWasDone: f.fix_status === "fixed"
+        ? (f.source === "sca"
+          ? `Upgraded ${f.package ?? "package"} from ${f.current_version ?? "?"} to ${f.fixed_version ?? "?"}`
+          : f.fix_notes)
+        : null,
+      impactLevel: f.source === "sca" ? (f.upgrade_impact as "MAJOR" | "MID" | "MINOR" | null) : null,
+      analystTestNote: deriveAnalystTestNote(f),
+    };
+  });
 
   const needsHuman = rawFindings
     .filter((f) => f.fix_status === "needs_human")

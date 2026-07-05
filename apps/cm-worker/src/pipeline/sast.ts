@@ -78,34 +78,15 @@ async function preFilterFindings(
 }
 
 function buildBatchTask(toDispatch: DispatchItem[], runConfig: { buildCommand?: string; testCommand?: string }, workingDir: string): string {
-  const buildCmd = runConfig.buildCommand ?? "";
+  const buildCmd = runConfig.buildCommand ?? "(none configured — skip)";
   const findingsSummary = toDispatch.map(describeFinding).join("\n\n");
 
-  return `Fix ${toDispatch.length} SAST security vulnerability finding(s) in source code. Fix ALL of them in this single session.
+  return `Fix ${toDispatch.length} SAST security vulnerability finding(s) in source code, per your system prompt's process and rules. Fix ALL of them in this single session.
 
-Instructions:
-1. Read each vulnerable file listed below.
-2. Use context7 to look up secure coding patterns for each vulnerability type.
-3. Apply a minimal, targeted fix per finding:
-   - SQL injection: use parameterized queries / prepared statements
-   - XSS: encode output, validate/sanitize input
-   - Path traversal: validate/canonicalize paths
-   - Command injection: avoid shell, use safe APIs
-   - Other: follow OWASP guidance for the specific rule
-4. Do NOT change unrelated code — minimize the diff, one finding's fix should not touch another finding's file unless truly shared.
-5. Preserve all existing behavior and test assertions.
-6. If a build command is configured, run it to verify compilation: ${buildCmd || "(none — skip)"}
-7. If a specific fix cannot be applied safely (false positive, requires architectural change), leave that file unchanged and mark it "failed" — don't let one finding block the others.
+Build command: ${buildCmd}
 
 Findings to fix:
 ${findingsSummary}
-
-Return your final message as ONLY a valid JSON object (no markdown, no extra prose) matching this schema:
-{
-  "results": [
-    { "fingerprint": "<exact fingerprint from input>", "fixStatus": "fixed" | "failed" | "skipped", "notes": "<what you did or why it failed>" }
-  ]
-}
 
 Working directory: ${workingDir}`;
 }

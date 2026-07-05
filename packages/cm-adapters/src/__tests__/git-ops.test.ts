@@ -54,6 +54,42 @@ describe("GitOps", () => {
     }
   });
 
+  it("push without force rejects a diverged remote branch; force:true overwrites it (real production bug: fix branch re-cloned fresh every attempt)", async () => {
+    const firstDir = await gitOps.cloneToTemp(bareDir);
+    const secondDir = await gitOps.cloneToTemp(bareDir);
+    try {
+      for (const dir of [firstDir, secondDir]) {
+        await execa("git", ["config", "user.email", "test@test.com"], { cwd: dir });
+        await execa("git", ["config", "user.name", "Test User"], { cwd: dir });
+      }
+
+      // First "attempt": pushes fix-branch with its own commit.
+      await gitOps.createBranch(firstDir, "checkmarx-fix");
+      await writeFile(join(firstDir, "fix.txt"), "attempt one");
+      await gitOps.commitAll(firstDir, "fix: attempt one");
+      await gitOps.push(firstDir, "checkmarx-fix");
+
+      // Second "attempt": fresh clone from the base branch (doesn't know
+      // about the first attempt's commit on checkmarx-fix), same branch name.
+      await gitOps.createBranch(secondDir, "checkmarx-fix");
+      await writeFile(join(secondDir, "fix.txt"), "attempt two");
+      await gitOps.commitAll(secondDir, "fix: attempt two");
+
+      await expect(gitOps.push(secondDir, "checkmarx-fix")).rejects.toThrow();
+
+      // force:true must succeed and make the remote reflect attempt two.
+      await gitOps.push(secondDir, "checkmarx-fix", { force: true });
+
+      const verifyDir = await gitOps.cloneToTemp(bareDir, "checkmarx-fix");
+      const content = await readFile(join(verifyDir, "fix.txt"), "utf-8");
+      expect(content).toBe("attempt two");
+      await gitOps.cleanup(verifyDir);
+    } finally {
+      await gitOps.cleanup(firstDir);
+      await gitOps.cleanup(secondDir);
+    }
+  });
+
   it("createBranch creates and switches to a new branch", async () => {
     const clonedDir = await gitOps.cloneToTemp(bareDir);
     try {

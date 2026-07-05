@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createSupabaseClient, createPgBoss } from "../db.js";
+import { createSupabaseClient, createPgBoss, createCheckpointer } from "../db.js";
 
 describe("db", () => {
   describe("createSupabaseClient", () => {
@@ -27,6 +27,19 @@ describe("db", () => {
       process.env.CM_DATABASE_URL = "postgresql://localhost:5432/test";
       const boss = createPgBoss();
       expect(boss).toBeDefined();
+    });
+  });
+
+  describe("createCheckpointer", () => {
+    it("throws when CM_DATABASE_URL is missing", () => {
+      delete process.env.CM_DATABASE_URL;
+      expect(() => createCheckpointer()).toThrow("Missing database connection string");
+    });
+
+    it("creates a PostgresSaver instance when connection string is present", () => {
+      process.env.CM_DATABASE_URL = "postgresql://localhost:5432/test";
+      const checkpointer = createCheckpointer();
+      expect(checkpointer).toBeDefined();
     });
   });
 });

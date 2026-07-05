@@ -21,6 +21,7 @@ import { handleRescan } from "../handlers/rescan.js";
 import { handlePushAndPR } from "../handlers/push-pr.js";
 import { MockScanProvider, StubRunner } from "@conductor/cm-adapters";
 import type { ScanProvider } from "@conductor/cm-adapters";
+import { MemorySaver } from "@langchain/langgraph";
 
 const REPO_NAME = "ms-test-repo";
 
@@ -244,7 +245,8 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
         data: { html_url: "https://github.com/test/ms-test-repo/pull/1" },
       });
 
-      await handleFix(supabase as never, rescanProvider, passingAgentRunner, scanId, mockGitOps as never);
+      const checkpointer = new MemorySaver();
+      await handleFix(supabase as never, rescanProvider, passingAgentRunner, checkpointer, scanId, mockGitOps as never);
       await rm(fixTmpDir, { recursive: true, force: true }).catch(() => {});
 
       scan = getLatest("cm_scan");

@@ -100,6 +100,12 @@ export async function handleScan(
       findings = scanResult.findings ?? await scanProvider.fetchResults(externalScanId);
     }
 
+    // Pipeline only ever acts on CRITICAL/HIGH — cut MEDIUM/LOW here so they
+    // never reach the DB or any downstream agent.
+    const preFilterCount = findings.length;
+    findings = findings.filter((f) => f.severity === "CRITICAL" || f.severity === "HIGH");
+    console.log(`[scan-handler] scan ${scanId}: ${findings.length}/${preFilterCount} findings are CRITICAL/HIGH, rest discarded`);
+
     await supabase
       .from("cm_scan")
       .update({ external_scan_id: externalScanId, branch_scanned: branch, current_step: "Fetching results..." })

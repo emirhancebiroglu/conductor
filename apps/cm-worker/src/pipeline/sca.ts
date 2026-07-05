@@ -118,40 +118,17 @@ async function preFilterFindings(
 }
 
 function buildBatchTask(toDispatch: DispatchItem[], runConfig: { buildCommand?: string; testCommand?: string }, workingDir: string): string {
-  const buildCmd = runConfig.buildCommand ?? "";
-  const testCmd = runConfig.testCommand ?? "";
+  const buildCmd = runConfig.buildCommand ?? "(none configured — skip build verification)";
+  const testCmd = runConfig.testCommand ?? "(none configured — skip test verification)";
   const findingsSummary = toDispatch.map(describeFinding).join("\n\n");
 
-  return `Fix ${toDispatch.length} SCA (dependency) vulnerability finding(s) in this repo. Fix ALL of them in this single session.
+  return `Fix ${toDispatch.length} SCA (dependency) vulnerability finding(s) in this repo, per your system prompt's process and rules. Fix ALL of them in this single session.
 
-For "upgrade" strategy findings:
-1. Use context7 to look up the target version's changelog and API changes.
-2. Use Tavily to research any breaking changes or known issues with the upgrade.
-3. Find all manifest files (package.json, pom.xml, build.gradle, requirements.txt, etc.) declaring the dependency and apply the version bump.
-4. If the new API has breaking changes, update the call sites accordingly.
-
-For "mitigate" strategy findings (no clean upgrade available):
-- override: add/extend npm overrides pinning the transitive dep to a patched version.
-- resolution: add/extend yarn resolutions.
-- dependency-management: pin via Maven <dependencyManagement> or Gradle resolutionStrategy.
-- alias: alias the dependency to a patched build.
-- replacement: swap the abandoned package for a maintained drop-in equivalent, update imports minimally.
-
-After applying all fixes:
-5. Run the build command to verify: ${buildCmd || "(none configured — skip build verification)"}
-6. Run the test command to verify: ${testCmd || "(none configured — skip test verification)"}
-7. If build or tests fail because of one of your changes, revert that specific change and mark it "failed" — don't let one bad fix block the others.
-8. NEVER fake a fix — do what actually closes the finding.
+Build command: ${buildCmd}
+Test command: ${testCmd}
 
 Findings to fix:
 ${findingsSummary}
-
-Return your final message as ONLY a valid JSON object (no markdown, no extra prose) matching this schema:
-{
-  "results": [
-    { "fingerprint": "<exact fingerprint from input>", "fixStatus": "fixed" | "failed" | "skipped", "notes": "<what you did or why it failed>" }
-  ]
-}
 
 Working directory: ${workingDir}`;
 }

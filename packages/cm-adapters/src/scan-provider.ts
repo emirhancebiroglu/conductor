@@ -14,4 +14,12 @@ export interface ScanProvider {
    * initial baseline scan when a recent scheduled scan already covers it.
    */
   getLatestScan?(repo: { owner: string; name: string }, branch: string): Promise<{ externalScanId: string } | null>;
+
+  /**
+   * Submits and waits for a fresh scan of repo+branch entirely via the
+   * Checkmarx One REST API (no `cx` CLI subprocess) — used specifically for
+   * the fix-branch validation rescan, where a slow/eventually-consistent CLI
+   * round-trip isn't acceptable. Returns findings directly.
+   */
+  rescanRest?(repo: { owner: string; name: string }, branch: string): Promise<ScanResult>;
 }

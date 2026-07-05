@@ -37,6 +37,10 @@ const MOCK_FINDINGS = [
     currentVersion: "4.17.20",
     fixedVersion: "4.17.21",
     fixStatus: "fixed",
+    skipReason: null,
+    whatWasDone: "Upgraded lodash from 4.17.20 to 4.17.21",
+    impactLevel: "MINOR" as const,
+    analystTestNote: "No need — minor/mid upgrade, no manual test required.",
   },
   {
     severity: "HIGH",
@@ -46,6 +50,10 @@ const MOCK_FINDINGS = [
     currentVersion: null,
     fixedVersion: null,
     fixStatus: "fixed",
+    skipReason: null,
+    whatWasDone: "Applied parameterized query",
+    impactLevel: null,
+    analystTestNote: "Verify src/db/query.ts still behaves correctly after the fix (SQL Injection).",
   },
   {
     severity: "MEDIUM",
@@ -55,6 +63,10 @@ const MOCK_FINDINGS = [
     currentVersion: "1.2.5",
     fixedVersion: "1.2.8",
     fixStatus: "skipped",
+    skipReason: "MINOR upgrade skipped per sca_test_policy",
+    whatWasDone: null,
+    impactLevel: "MINOR" as const,
+    analystTestNote: "No need — minor/mid upgrade, no manual test required.",
   },
 ];
 
@@ -87,6 +99,15 @@ describe("generateReport", () => {
     expect(text).toContain("CRITICAL");
     expect(text).toContain("HIGH");
     expect(text).toContain("MEDIUM");
+  });
+
+  it("contains per-finding what-was-done, skip reason, and analyst test notes", async () => {
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+    const text = await extractText(buffer);
+    expect(text).toContain("Upgraded lodash from 4.17.20 to 4.17.21");
+    expect(text).toContain("MINOR upgrade skipped per sca_test_policy");
+    expect(text).toContain("No need — minor/mid upgrade, no manual test required.");
+    expect(text).toContain("Verify src/db/query.ts still behaves correctly after the fix (SQL Injection).");
   });
 
   it("contains the scan summary section", async () => {
@@ -173,6 +194,20 @@ describe("saveReport", () => {
 
       const content = await readFile(filePath);
       expect(content.length).toBeGreaterThan(0);
+      expect(content.toString("utf-8", 0, 5)).toBe("%PDF-");
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("creates the target directory if it doesn't exist yet (real production failure: ENOENT on a fresh reportDir)", async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), "cm-report-test-"));
+    const nestedDir = join(tmpDir, "does", "not", "exist", "yet");
+    try {
+      const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+      const filePath = await saveReport(buffer, nestedDir, "ms-test-repo");
+
+      const content = await readFile(filePath);
       expect(content.toString("utf-8", 0, 5)).toBe("%PDF-");
     } finally {
       await rm(tmpDir, { recursive: true, force: true });

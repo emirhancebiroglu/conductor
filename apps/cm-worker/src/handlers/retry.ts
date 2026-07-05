@@ -1,6 +1,7 @@
 import { CheckmarxScanError } from "@conductor/cm-adapters";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScanProvider } from "@conductor/cm-adapters";
+import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import type { PgBoss } from "pg-boss";
 import { handleScan } from "./scan.js";
 import { handleFix } from "./fix.js";
@@ -110,13 +111,14 @@ export function createFixWorkHandler(
   supabase: SupabaseClient,
   scanProvider: ScanProvider,
   agentRunner: import("@conductor/cm-adapters").AgentRunner,
+  checkpointer: BaseCheckpointSaver,
 ): (jobs: Array<{ data: { scanId: string } }>) => Promise<void> {
   return async (jobs) => {
     for (const job of jobs) {
       const startTime = Date.now();
 
       try {
-        await handleFix(supabase, scanProvider, agentRunner, job.data.scanId);
+        await handleFix(supabase, scanProvider, agentRunner, checkpointer, job.data.scanId);
         const elapsed = Date.now() - startTime;
         console.log(`[retry] fix ${job.data.scanId} completed in ${elapsed}ms`);
       } catch (err) {

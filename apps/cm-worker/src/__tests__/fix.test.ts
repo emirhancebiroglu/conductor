@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { handleFix } from "../handlers/fix.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScanProvider, AgentRunner } from "@conductor/cm-adapters";
+import { MemorySaver } from "@langchain/langgraph";
 
 function createMockScanRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -61,16 +62,20 @@ function makeProviders() {
   const scan = vi.fn();
   const scanProvider = { scan, fetchResults: vi.fn() } as unknown as ScanProvider;
   const agentRunner = { run: vi.fn() } as unknown as AgentRunner;
-  return { scanProvider, agentRunner, scan };
+  // why: handleFix always calls graph.getState() up front to check for a
+  // resumable checkpoint, even for scans that end up hitting an early
+  // loadFixInputs return — needs a real (in-memory is fine) checkpointer.
+  const checkpointer = new MemorySaver();
+  return { scanProvider, agentRunner, checkpointer, scan };
 }
 
 describe("handleFix", () => {
   it("skips when scan cannot transition to fixing", async () => {
     const scanRow = createMockScanRow({ status: "scanning" });
     const supabase = mockScanSupabase(scanRow, createMockRepoRow());
-    const { scanProvider, agentRunner, scan } = makeProviders();
+    const { scanProvider, agentRunner, checkpointer, scan } = makeProviders();
 
-    await handleFix(supabase, scanProvider, agentRunner, "scan-001");
+    await handleFix(supabase, scanProvider, agentRunner, checkpointer, "scan-001");
 
     expect(scan).not.toHaveBeenCalled();
   });
@@ -78,9 +83,9 @@ describe("handleFix", () => {
   it("skips when no actionable findings", async () => {
     const scanRow = createMockScanRow({ findings_actionable: 0 });
     const supabase = mockScanSupabase(scanRow, createMockRepoRow());
-    const { scanProvider, agentRunner, scan } = makeProviders();
+    const { scanProvider, agentRunner, checkpointer, scan } = makeProviders();
 
-    await handleFix(supabase, scanProvider, agentRunner, "scan-001");
+    await handleFix(supabase, scanProvider, agentRunner, checkpointer, "scan-001");
 
     expect(scan).not.toHaveBeenCalled();
   });

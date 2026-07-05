@@ -2,7 +2,7 @@ import pdfMake from "pdfmake";
 import type { Content, TableCell as PdfTableCell } from "pdfmake";
 
 type TDocumentDefinitions = Parameters<typeof pdfMake.createPdf>[0];
-import { writeFile, readFile } from "node:fs/promises";
+import { writeFile, readFile, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +37,10 @@ type ReportFinding = {
   currentVersion: string | null;
   fixedVersion: string | null;
   fixStatus: string;
+  skipReason: string | null;
+  whatWasDone: string | null;
+  impactLevel: "MAJOR" | "MID" | "MINOR" | null;
+  analystTestNote: string;
 };
 
 type ReportFix = {
@@ -165,19 +169,42 @@ export async function generateReport(input: ReportInput): Promise<Buffer> {
   const findingsTable: Content = {
     table: {
       headerRows: 1,
-      widths: ["12%", "10%", "33%", "25%", "20%"],
+      widths: ["10%", "8%", "27%", "20%", "10%", "25%"],
       body: [
-        ["Severity", "Source", "Rule / Package", "Version", "Status"].map(headerCell),
+        ["Severity", "Source", "Rule / Package", "Version", "Status", "Impact"].map(headerCell),
         ...input.findings.map((f) => [
           dataCell(f.severity, severityColor(f.severity)),
           dataCell(f.source),
           dataCell(f.rule ?? f.package ?? ""),
           dataCell(f.source === "sca" ? `${f.currentVersion ?? ""} -> ${f.fixedVersion ?? ""}` : ""),
           dataCell(f.fixStatus),
+          dataCell(f.impactLevel ?? (f.source === "sast" ? "n/a" : "")),
         ]),
       ],
     },
     layout: { hLineColor: () => "#DDDDDD", vLineColor: () => "#DDDDDD" },
+  };
+
+  const findingsDetail: Content = {
+    stack: input.findings.map((f): Content => {
+      const label = f.rule ?? f.package ?? "unknown";
+      const lines: string[] = [];
+      if (f.fixStatus === "fixed" && f.whatWasDone) {
+        lines.push(`What was done: ${f.whatWasDone}`);
+      }
+      if ((f.fixStatus === "skipped" || f.fixStatus === "failed" || f.fixStatus === "needs_human") && f.skipReason) {
+        lines.push(`Reason: ${f.skipReason}`);
+      }
+      lines.push(`Analyst test note: ${f.analystTestNote}`);
+
+      return {
+        margin: [0, 0, 0, 8],
+        stack: [
+          { text: `${label} (${f.severity}, ${f.source.toUpperCase()}) — ${f.fixStatus}`, bold: true, fontSize: 9, color: REPORT_THEME.ink },
+          ...lines.map((line) => ({ text: line, fontSize: 8, color: REPORT_THEME.muted, margin: [8, 1, 0, 0] as [number, number, number, number] })),
+        ],
+      };
+    }),
   };
 
   const fixesTable: Content =
@@ -235,6 +262,9 @@ export async function generateReport(input: ReportInput): Promise<Buffer> {
       subheading("Findings"),
       findingsTable,
 
+      subheading("Findings — Details"),
+      findingsDetail,
+
       subheading("Fixes Applied"),
       fixesTable,
 
@@ -253,6 +283,7 @@ export async function saveReport(buffer: Buffer, dir: string, repoName: string):
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const fileName = `${repoName}-cm-${timestamp}.pdf`;
   const filePath = join(dir, fileName);
+  await mkdir(dir, { recursive: true });
   await writeFile(filePath, buffer);
   return filePath;
 }

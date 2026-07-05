@@ -319,6 +319,20 @@ export const CmBatchFixResultSchema = z.object({
 export type CmBatchFixResult = z.infer<typeof CmBatchFixResultSchema>;
 
 // ---------------------------------------------------------------------------
+// Verifier outcome (emitted by cm-fix-verifier) — 3-way instead of binary
+// PASS/FAIL so pre-existing, fix-unrelated breakage doesn't block the pipeline.
+// ---------------------------------------------------------------------------
+
+export const CmVerifyOutcomeSchema = z.enum(["pass", "fail_regression", "fail_preexisting"]);
+export type CmVerifyOutcome = z.infer<typeof CmVerifyOutcomeSchema>;
+
+export const CmVerifyResultSchema = z.object({
+  outcome: CmVerifyOutcomeSchema,
+  summary: z.string(),
+});
+export type CmVerifyResult = z.infer<typeof CmVerifyResultSchema>;
+
+// ---------------------------------------------------------------------------
 // Snake ↔ Camel mappers
 // ---------------------------------------------------------------------------
 

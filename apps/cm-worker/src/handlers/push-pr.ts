@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { GitOps } from "@conductor/cm-adapters";
 import { canTransitionScan } from "@conductor/cm-core";
+import { resolveCloneBranch } from "../pipeline/branch-resolution.js";
 
 type CmScanRow = {
   id: string;
@@ -72,12 +73,17 @@ export async function handlePushAndPR(
     .eq("id", scanId);
 
   const ops = gitOps ?? new GitOps();
-  const cloneBranch = scan.branch_scanned ?? repo.default_branch;
   const prBase = scan.branch_scanned ?? repo.default_branch;
+  // why: the fix branch may already exist remotely (fix-graph.ts's fix node
+  // pushes commits to it directly) — clone it directly when so, rather than
+  // branching off prBase and re-creating a branch name that already exists.
+  const { cloneBranch, isExistingFixBranch } = await resolveCloneBranch(ops, repoUrl, fixBranch, prBase);
   const workDir = await ops.cloneToTemp(repoUrl, cloneBranch);
 
   try {
-    await ops.createBranch(workDir, fixBranch);
+    if (!isExistingFixBranch) {
+      await ops.createBranch(workDir, fixBranch);
+    }
 
     // Push the fix branch before opening the PR
     await ops.pushBranch(workDir, fixBranch);

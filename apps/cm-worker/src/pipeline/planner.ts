@@ -44,43 +44,7 @@ export async function runPlanner(
   }).join("\n\n");
 
   const task = {
-    description: `Triage the following ${findings.length} security finding(s) from a Checkmarx scan.
-
-For each finding, determine:
-1. Is the vulnerable code/dependency actually reachable in this codebase?
-2. Is it practically exploitable given the context?
-3. Category: frontend | backend | shared | infra (where the fix lands).
-4. What is the fix strategy:
-   - "upgrade" — SCA finding with a clean fixed version available.
-   - "mitigate" — SCA with NO safe direct upgrade (transitive, abandoned, breaking). Pick a mitigationKind.
-   - "code-fix" — SAST finding fixed in source.
-   - "skip" — ONLY genuine false positive (set falsePositive=true, justify in notes).
-   - "needs-human" — real finding with no safe automated fix.
-5. For upgrades: what is the safe target version (latest non-breaking patch/minor, or major if required)?
-6. Priority 1-10 (10 = fix immediately). confidence 0-1.
-7. CRITICAL/HIGH only get auto-fixed. MEDIUM/LOW → "skip" (if false positive) or "needs-human".
-
-Use Tavily to research CVE details, GitHub advisories, and real-world exploitability.
-Use context7 to check library changelogs and breaking-change notes for version upgrades.
-
-Return ONLY a valid JSON object matching this schema (no markdown, no explanation):
-{
-  "findings": [
-    {
-      "fingerprint": "<exact fingerprint from input>",
-      "strategy": "upgrade" | "mitigate" | "code-fix" | "skip" | "needs-human",
-      "category": "frontend" | "backend" | "shared" | "infra",
-      "reachable": true | false,
-      "exploitable": true | false,
-      "falsePositive": true | false,
-      "mitigationKind": "override" | "resolution" | "dependency-management" | "alias" | "replacement" | "none",
-      "priority": 1-10,
-      "confidence": 0.0-1.0,
-      "notes": "<reasoning with cited evidence>",
-      "targetVersion": "<semver string, only for upgrade strategy>"
-    }
-  ]
-}
+    description: `Triage the following ${findings.length} security finding(s) from a Checkmarx scan, per your system prompt's process and output schema.
 
 Findings to triage:
 ${findingsSummary}`,

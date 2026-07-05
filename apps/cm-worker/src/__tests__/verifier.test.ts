@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { runVerifier } from "../pipeline/verifier.js";
+import { extractErrorSignature } from "../pipeline/build-runner.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AgentRunner } from "@conductor/cm-adapters";
 
 function makeSupabase() {
   return {
@@ -33,59 +33,99 @@ function makeSupabase() {
   } as unknown as SupabaseClient;
 }
 
-function makeRunner(summary: string): AgentRunner {
+function makeRunner(summary: string) {
   return { run: vi.fn().mockResolvedValue({ summary, changed: false, usage: { inputTokens: 50, outputTokens: 10 } }) };
+}
+
+function verdict(outcome: string, summary: string): string {
+  return JSON.stringify({ outcome, summary });
 }
 
 const OPTS_BASE = {
   scanId: "scan-001",
   workspaceId: "ws-001",
-  workingDir: "/tmp/repo",
-  runConfig: { buildCommand: "npm run build", testCommand: "npm test" },
 };
 
-describe("runVerifier — strict PASS: gate", () => {
-  it("PASS: prefix → passed=true", async () => {
-    const result = await runVerifier({ ...OPTS_BASE, supabase: makeSupabase(), agentRunner: makeRunner("PASS: build ok, 42 tests passed") });
-    expect(result.passed).toBe(true);
-  });
-
-  it("FAIL: prefix → passed=false", async () => {
-    const result = await runVerifier({ ...OPTS_BASE, supabase: makeSupabase(), agentRunner: makeRunner("FAIL: 3 tests failed in auth.test.ts") });
-    expect(result.passed).toBe(false);
-  });
-
-  it("empty string → passed=false", async () => {
-    const result = await runVerifier({ ...OPTS_BASE, supabase: makeSupabase(), agentRunner: makeRunner("") });
-    expect(result.passed).toBe(false);
-  });
-
-  it("non-prefixed text → passed=false (no loose match)", async () => {
-    const result = await runVerifier({ ...OPTS_BASE, supabase: makeSupabase(), agentRunner: makeRunner("All tests completed successfully") });
-    expect(result.passed).toBe(false);
-  });
-
-  it("lowercase pass: → passed=false (must be uppercase PASS:)", async () => {
-    const result = await runVerifier({ ...OPTS_BASE, supabase: makeSupabase(), agentRunner: makeRunner("pass: build done") });
-    // The impl does .toUpperCase().startsWith("PASS:") so lowercase "pass:" uppercases to "PASS:" — this should pass
-    expect(result.passed).toBe(true);
-  });
-
-  it("no build/test commands → skips agent, returns passed=true", async () => {
-    const runner = makeRunner("PASS: ok");
+describe("runVerifier — deterministic-first classification", () => {
+  it("exit code 0 → pass, no agent dispatch at all", async () => {
+    const runner = makeRunner(verdict("pass", "should never be called"));
     const result = await runVerifier({
-      ...OPTS_BASE,
-      supabase: makeSupabase(),
-      agentRunner: runner,
-      runConfig: {},
+      ...OPTS_BASE, supabase: makeSupabase(), agentRunner: runner,
+      buildExitCode: 0, buildOutput: "BUILD SUCCESS",
     });
-    expect(result.passed).toBe(true);
+
+    expect(result.outcome).toBe("pass");
     expect(runner.run).not.toHaveBeenCalled();
   });
 
-  it("summary is propagated in the result", async () => {
-    const summary = "PASS: build ok, 100 tests passed";
-    const result = await runVerifier({ ...OPTS_BASE, supabase: makeSupabase(), agentRunner: makeRunner(summary) });
-    expect(result.summary).toBe(summary);
+  it("failure signature matches baseline exactly → fail_preexisting, no agent dispatch (the real ms-imei/ms-tasier case)", async () => {
+    const buildOutput = `$ mvn install -DskipTests
+[INFO] Running 'npm install --legacy-peer-deps' in /repo/client
+npm ERR! code ENOVERSIONS
+npm ERR! No versions available for react-flexy-loader
+[ERROR] Failed to execute goal com.github.eirslett:frontend-maven-plugin:1.15.1:npm (npm install) on project imei
+BUILD FAILURE`;
+
+    const runner = makeRunner(verdict("fail_regression", "should never be called — deterministic match should short-circuit"));
+
+    // why: baseline check ran the exact same broken build first (unmodified
+    // code, same dead npm dependency), so its signature must be derived the
+    // same way — a hand-typed array here would just mask an extraction bug.
+    const baselineErrorSignature = extractErrorSignature(buildOutput);
+
+    const result = await runVerifier({
+      ...OPTS_BASE, supabase: makeSupabase(), agentRunner: runner,
+      buildExitCode: 1, buildOutput, baselineErrorSignature,
+    });
+
+    expect(result.outcome).toBe("fail_preexisting");
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it("failure signature differs from baseline → dispatches agent for classification", async () => {
+    const supabase = makeSupabase();
+    const runner = makeRunner(verdict("fail_regression", "New compile error introduced by the fix"));
+
+    const result = await runVerifier({
+      ...OPTS_BASE, supabase, agentRunner: runner,
+      buildExitCode: 1,
+      buildOutput: "[ERROR] cannot find symbol: method fooBar()\nBUILD FAILURE",
+      baselineErrorSignature: ["BUILD FAILURE", "npm ERR! code ENOVERSIONS"],
+    });
+
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    expect(result.outcome).toBe("fail_regression");
+
+    const task = runner.run.mock.calls[0]![1] as { description: string };
+    expect(task.description).toContain("cannot find symbol: method fooBar()");
+    expect(task.description).toContain("npm ERR! code ENOVERSIONS");
+  });
+
+  it("no baseline signature available → dispatches agent (can't short-circuit without a baseline)", async () => {
+    const runner = makeRunner(verdict("fail_regression", "no baseline to compare against"));
+    const result = await runVerifier({
+      ...OPTS_BASE, supabase: makeSupabase(), agentRunner: runner,
+      buildExitCode: 1, buildOutput: "[ERROR] something broke\nBUILD FAILURE",
+    });
+
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    expect(result.outcome).toBe("fail_regression");
+  });
+
+  it("agent output wrapped in markdown fences is still parsed", async () => {
+    const summary = "```json\n" + verdict("fail_preexisting", "confirmed pre-existing via reasoning") + "\n```";
+    const result = await runVerifier({
+      ...OPTS_BASE, supabase: makeSupabase(), agentRunner: makeRunner(summary),
+      buildExitCode: 1, buildOutput: "[ERROR] x\nBUILD FAILURE", baselineErrorSignature: ["[ERROR] y"],
+    });
+    expect(result.outcome).toBe("fail_preexisting");
+  });
+
+  it("missing/invalid JSON from the classification agent → fail-safe to fail_regression", async () => {
+    const result = await runVerifier({
+      ...OPTS_BASE, supabase: makeSupabase(), agentRunner: makeRunner("no structured verdict given"),
+      buildExitCode: 1, buildOutput: "[ERROR] x\nBUILD FAILURE", baselineErrorSignature: ["[ERROR] y"],
+    });
+    expect(result.outcome).toBe("fail_regression");
   });
 });

@@ -4,6 +4,14 @@ import { dirname } from "node:path";
 import type { AgentRunner, AgentRunnerTask, AgentRunnerResult } from "./agent-runner.js";
 
 const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+// why: cm-fix-planner triages every actionable finding in one call (can be
+// 50+ findings, each researched via tavily/context7) — the default budget
+// isn't enough and was silently discarding the agent's finished JSON on kill.
+const PLANNER_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+
+function timeoutForAgent(agentName: string): number {
+  return agentName === "cm-fix-planner" ? PLANNER_TIMEOUT_MS : TIMEOUT_MS;
+}
 
 // ---------------------------------------------------------------------------
 // Tool-token → allowedTools string expansion
@@ -178,12 +186,21 @@ function spawnAgent(opts: SpawnAgentOptions): Promise<{ output: string; success:
       }
     };
 
+    const timeoutMs = timeoutForAgent(agentName);
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
       child.kill("SIGKILL");
-      resolve({ success: false, output: `[timeout after ${TIMEOUT_MS / 1000}s]` });
-    }, TIMEOUT_MS);
+      if (stdoutBuf) onLine?.(stdoutBuf, "stdout");
+      // why: the agent may have already written its full JSON answer before
+      // the wall-clock timeout fired — return whatever stdout was captured
+      // instead of discarding it, so the caller can still parse it.
+      const partial = stdoutFull.trim();
+      resolve({
+        success: false,
+        output: partial ? `${partial}\n[timeout after ${timeoutMs / 1000}s], process killed` : `[timeout after ${timeoutMs / 1000}s]`,
+      });
+    }, timeoutMs);
 
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {

@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any */
 
-import { createPgBoss, createSupabaseClient } from "./db.js";
+import { createPgBoss, createSupabaseClient, createCheckpointer } from "./db.js";
 import { loadConfig } from "./config.js";
 import { createScanWorkHandler, createFixWorkHandler, setupScanQueue, setupFixQueue, QUEUE_SCAN, QUEUE_FIX, DEFAULT_RETRY_LIMIT, DEFAULT_RETRY_DELAY_SECONDS } from "./handlers/retry.js";
+import { RESUME_REQUESTED_MARKER } from "./handlers/fix.js";
 import { runScheduler } from "./handlers/scheduler.js";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -36,6 +37,9 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const supabase = createSupabaseClient();
   const boss = createPgBoss();
+  const checkpointer = createCheckpointer();
+  await checkpointer.setup();
+  console.log("[cm-worker] fix-pipeline checkpointer ready");
 
   console.log(`[cm-worker] scan provider: ${config.scanProvider.constructor.name}`);
   console.log(`[cm-worker] agent runner: ${config.agentRunner.constructor.name}`);
@@ -82,7 +86,7 @@ async function main(): Promise<void> {
   const scanHandler = createScanWorkHandler(supabase, config.scanProvider, boss);
   void boss.work(QUEUE_SCAN, scanHandler);
 
-  const fixHandler = createFixWorkHandler(supabase, config.scanProvider, config.agentRunner);
+  const fixHandler = createFixWorkHandler(supabase, config.scanProvider, config.agentRunner, checkpointer);
   void boss.work(QUEUE_FIX, fixHandler);
 
   // Poll for queued scans inserted directly by the dashboard (no pg-boss enqueue from serverless)
@@ -137,8 +141,37 @@ async function main(): Promise<void> {
     }
   };
 
+  // Poll for needs_human scans where a human requested a resume (dashboard
+  // sets current_step to RESUME_REQUESTED_MARKER) — handleFix detects the
+  // paused checkpoint and continues from there instead of restarting.
+  const pollResumeRequests = async () => {
+    try {
+      const { data } = await (supabase as any)
+        .from("cm_scan")
+        .select("id")
+        .eq("status", "needs_human")
+        .eq("current_step", RESUME_REQUESTED_MARKER)
+        .limit(10);
+
+      if (data && data.length > 0) {
+        for (const row of data as Array<{ id: string }>) {
+          const lastSent = recentlyEnqueued.get(row.id);
+          if (lastSent && Date.now() - lastSent < ENQUEUE_COOLDOWN_MS) continue;
+          await boss.send(QUEUE_FIX, { scanId: row.id }, { singletonKey: row.id });
+          recentlyEnqueued.set(row.id, Date.now());
+          console.log(`[cm-worker] enqueued fix resume for scan: ${row.id}`);
+        }
+      }
+    } catch {
+      // non-fatal poll error
+    }
+  };
+
   setInterval(() => { void pollQueuedScans(); }, POLL_INTERVAL_MS);
   void pollQueuedScans(); // immediate first check
+
+  setInterval(() => { void pollResumeRequests(); }, POLL_INTERVAL_MS);
+  void pollResumeRequests();
 
   setInterval(() => { void pollScanDoneForFix(); }, POLL_INTERVAL_MS);
   void pollScanDoneForFix();

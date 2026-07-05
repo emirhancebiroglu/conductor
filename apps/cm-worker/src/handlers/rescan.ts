@@ -59,7 +59,8 @@ export async function handleRescan(
       branch,
     );
 
-    const findings = await scanProvider.fetchResults(externalScanId);
+    const rawFindings = await scanProvider.fetchResults(externalScanId);
+    const findings = rawFindings.filter((f) => f.severity === "CRITICAL" || f.severity === "HIGH");
 
     if (findings.length === 0) {
       await supabase
@@ -109,21 +110,17 @@ export async function handleRescan(
       return;
     }
 
-    const actionable = findings.filter(
-      (f) => f.severity === "CRITICAL" || f.severity === "HIGH",
-    ).length;
-
     await supabase
       .from("cm_scan")
       .update({
         status: "fixed",
-        findings_actionable: actionable,
+        findings_actionable: findings.length,
         findings_total: findings.length,
         current_step: "Findings remain, re-fixing...",
       })
       .eq("id", scanId);
 
-    console.log(`[rescan] scan ${scanId}: ${actionable} findings remain, sending back to fix`);
+    console.log(`[rescan] scan ${scanId}: ${findings.length} findings remain, sending back to fix`);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
 

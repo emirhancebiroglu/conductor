@@ -32,6 +32,16 @@ function mockSupabase(
           }),
         };
       }
+      if (table === "cm_repo") {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: { owner: "test-owner", name: "ms-test-repo", default_branch: "uat" },
+            error: null,
+          }),
+        };
+      }
       if (table === "cm_pipeline") {
         return {
           select: vi.fn().mockReturnThis(),

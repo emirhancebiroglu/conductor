@@ -261,6 +261,86 @@ describe("CheckmarxCliProvider", () => {
 
   });
 
+  describe("rescanRest", () => {
+    const MOCK_ENV_WITH_AUTH = { ...MOCK_ENV, CX_BASE_AUTH_URI: "https://iam.example.com" };
+    const TOKEN_RESPONSE = { ok: true, json: () => Promise.resolve({ access_token: "tok-abc", expires_in: 600 }) };
+    const PROJECTS_RESPONSE = { ok: true, json: () => Promise.resolve([{ id: "proj-123", name: "test-owner/ms-test-repo" }]) };
+    const SUBMIT_RESPONSE = { ok: true, json: () => Promise.resolve({ id: "rescan-999" }) };
+    const RUNNING_STATUS_RESPONSE = { ok: true, json: () => Promise.resolve({ status: "Running" }) };
+    const COMPLETED_STATUS_RESPONSE = { ok: true, json: () => Promise.resolve({ status: "Completed" }) };
+    const SAST_RESULTS_RESPONSE = {
+      ok: true,
+      json: () => Promise.resolve({
+        results: [{ id: "sast-1", severity: "HIGH", data: { queryName: "SQL_Injection", nodes: [{ fileName: "a.ts", line: 5 }] } }],
+      }),
+    };
+    const SCA_RESULTS_RESPONSE = {
+      ok: true,
+      json: () => Promise.resolve({
+        results: [{ id: "CVE-2024-1234", severity: "CRITICAL", data: { packageName: "lodash", packageVersion: "4.17.20", fixedVersion: "4.17.21" } }],
+      }),
+    };
+
+    let mockFetch: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mockFetch = vi.fn();
+      vi.stubGlobal("fetch", mockFetch);
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    it("submits via REST, polls until completed, and fetches SAST+SCA results via REST — no cx subprocess", async () => {
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_RESPONSE)
+        .mockResolvedValueOnce(PROJECTS_RESPONSE)
+        .mockResolvedValueOnce(SUBMIT_RESPONSE)
+        .mockResolvedValueOnce(RUNNING_STATUS_RESPONSE)
+        .mockResolvedValueOnce(COMPLETED_STATUS_RESPONSE)
+        .mockResolvedValueOnce(SAST_RESULTS_RESPONSE)
+        .mockResolvedValueOnce(SCA_RESULTS_RESPONSE);
+
+      const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
+      const resultPromise = provider.rescanRest({ owner: "test-owner", name: "ms-test-repo" }, "checkmarx-auto");
+
+      // let the submit + first poll tick happen, then advance past the poll interval twice
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await resultPromise;
+
+      expect(mockExeca).not.toHaveBeenCalled();
+      expect(result.externalScanId).toBe("rescan-999");
+      expect(result.findings).toHaveLength(2);
+      expect(result.findings?.some((f) => f.source === "sast")).toBe(true);
+      expect(result.findings?.some((f) => f.source === "sca")).toBe(true);
+
+      const submitCall = mockFetch.mock.calls[2] as [string, RequestInit];
+      expect(submitCall[0]).toContain("/api/scans");
+      expect(submitCall[1]?.method).toBe("POST");
+      const submitBody = JSON.parse(submitCall[1]?.body as string) as { handler?: { branch?: string } };
+      expect(submitBody.handler?.branch).toBe("checkmarx-auto");
+    });
+
+    it("throws if the scan ends with a non-completed terminal status", async () => {
+      mockFetch
+        .mockResolvedValueOnce(TOKEN_RESPONSE)
+        .mockResolvedValueOnce(PROJECTS_RESPONSE)
+        .mockResolvedValueOnce(SUBMIT_RESPONSE)
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ status: "Failed" }) });
+
+      const provider = new CheckmarxCliProvider(MOCK_ENV_WITH_AUTH);
+      const resultPromise = provider.rescanRest({ owner: "test-owner", name: "ms-test-repo" }, "checkmarx-auto");
+
+      const assertion = expect(resultPromise).rejects.toThrow(/ended with status Failed/);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+    });
+  });
+
   describe("fetchResults", () => {
     it("calls cx results show with correct CLI args", async () => {
       mockExeca.mockResolvedValueOnce({ stdout: MOCK_RESULTS_STDOUT, exitCode: 0 });
