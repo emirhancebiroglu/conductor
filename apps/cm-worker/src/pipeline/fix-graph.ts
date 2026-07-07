@@ -140,7 +140,7 @@ async function runCategoryFixes(opts: CategoryFixOptions): Promise<void> {
   if (sca.length > 0 && sast.length === 0) {
     await processScaFindings({
       supabase, agentRunner, scanId, workspaceId,
-      findings: sca, policy: scaPolicy, workingDir: primaryDir, runConfig, planItems,
+      findings: sca, policy: scaPolicy, workingDir: primaryDir, planItems,
     });
     return;
   }
@@ -166,7 +166,7 @@ async function runCategoryFixes(opts: CategoryFixOptions): Promise<void> {
     const [, sastResults] = await Promise.all([
       processScaFindings({
         supabase, agentRunner, scanId, workspaceId,
-        findings: sca, policy: scaPolicy, workingDir: primaryDir, runConfig, planItems,
+        findings: sca, policy: scaPolicy, workingDir: primaryDir, planItems,
       }),
       processSastFindings({
         supabase, agentRunner, scanId, workspaceId,

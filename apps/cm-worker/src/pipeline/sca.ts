@@ -61,7 +61,6 @@ type ScaFindingsOptions = {
   findings: CmFinding[];
   policy: ScaTestPolicy;
   workingDir: string;
-  runConfig: { buildCommand?: string; testCommand?: string };
   planItems: PlannerResult["items"];
 };
 
@@ -127,15 +126,19 @@ async function preFilterFindings(
   return { decided, toDispatch };
 }
 
-function buildBatchTask(toDispatch: DispatchItem[], runConfig: { buildCommand?: string; testCommand?: string }, workingDir: string): string {
-  const buildCmd = runConfig.buildCommand ?? "(none configured — skip build verification)";
-  const testCmd = runConfig.testCommand ?? "(none configured — skip test verification)";
+// why: build/test verification is intentionally NOT part of this task prompt —
+// the pipeline's separate deterministic verifier (build-runner.ts's
+// runBuildDeterministic, invoked once from fix-graph.ts's verify step) already
+// runs build+test after all fixes land. Injecting buildCommand/testCommand here
+// used to reinforce the agent re-running its own build/test per finding (real
+// production waste: a 21-finding run re-ran mvn install/mvn test ~5 times back
+// to back instead of once), duplicating work the verifier already does
+// correctly. The agent's own system prompt now confirms only the dependency
+// tree resolves to the target version — that's the one thing only it can do.
+function buildBatchTask(toDispatch: DispatchItem[], workingDir: string): string {
   const findingsSummary = toDispatch.map(describeFinding).join("\n\n");
 
   return `Fix ${toDispatch.length} SCA (dependency) vulnerability finding(s) in this repo, per your system prompt's process and rules. Fix ALL of them in this single session.
-
-Build command: ${buildCmd}
-Test command: ${testCmd}
 
 Findings to fix:
 ${findingsSummary}
@@ -165,7 +168,7 @@ async function persistDispatchResults(
 }
 
 export async function processScaFindings(opts: ScaFindingsOptions): Promise<ScaFixResult[]> {
-  const { supabase, agentRunner, scanId, workspaceId, findings, policy, workingDir, runConfig, planItems } = opts;
+  const { supabase, agentRunner, scanId, workspaceId, findings, policy, workingDir, planItems } = opts;
   const planMap = new Map(planItems.map((i) => [i.fingerprint, i]));
 
   const { decided, toDispatch } = await preFilterFindings(supabase, findings, planMap, policy);
@@ -179,7 +182,7 @@ export async function processScaFindings(opts: ScaFindingsOptions): Promise<ScaF
     .in("id", toDispatch.map((d) => d.finding.id));
 
   const task = {
-    description: buildBatchTask(toDispatch, runConfig, workingDir),
+    description: buildBatchTask(toDispatch, workingDir),
     workingDir,
   };
 
