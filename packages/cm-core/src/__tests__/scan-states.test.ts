@@ -34,17 +34,12 @@ const LEGAL_SCAN_TRANSITIONS: Array<[string, string]> = [
   ["fixed", "rescanning"],
   ["fixed", "failed"],
   ["rescanning", "scan_done"],
-  ["rescanning", "verified"],
+  ["rescanning", "reporting"],
   ["rescanning", "needs_human"],
   ["rescanning", "failed"],
-  ["verified", "pr_opening"],
-  ["verified", "failed"],
-  ["pr_opening", "pr_opened"],
-  ["pr_opening", "failed"],
-  ["pr_opened", "reporting"],
-  ["pr_opened", "failed"],
-  ["reporting", "done"],
+  ["reporting", "verified"],
   ["reporting", "failed"],
+  ["verified", "failed"],
   ["needs_human", "queued"],
   ["needs_human", "failed"],
 ];
@@ -59,21 +54,18 @@ const ILLEGAL_SCAN_TRANSITIONS: Array<[string, string]> = [
   ["scan_failed", "done"],
   ["scan_failed", "scanning"],
   ["fixing", "done"],
-  ["fixing", "reporting"],
   ["run_blocked", "done"],
   ["run_blocked", "scanning"],
   ["fixed", "done"],
   ["fixed", "fixing"],
   ["rescanning", "done"],
   ["rescanning", "fixing"],
+  ["rescanning", "verified"],
+  ["reporting", "done"],
+  ["reporting", "fixing"],
   ["verified", "done"],
   ["verified", "fixing"],
-  ["pr_opening", "done"],
-  ["pr_opening", "fixing"],
-  ["pr_opened", "done"],
-  ["pr_opened", "fixing"],
-  ["reporting", "queued"],
-  ["reporting", "fixing"],
+  ["verified", "reporting"],
   ["done", "queued"],
   ["done", "anything"],
   ["failed", "queued"],
@@ -108,6 +100,12 @@ describe("scan state machine", () => {
       expect(isScanTerminal("needs_human")).toBe(true);
     });
 
+    // why: the pipeline never opens a PR — it stops at "verified" (committed
+    // to checkmarx-auto, rescan confirmed clean); a human takes it from there.
+    it("marks verified as terminal", () => {
+      expect(isScanTerminal("verified")).toBe(true);
+    });
+
     it("does not mark queued as terminal", () => {
       expect(isScanTerminal("queued")).toBe(false);
     });
@@ -119,7 +117,7 @@ describe("scan state machine", () => {
     it("terminal set matches CM_SCAN_STATUS values", () => {
       for (const status of Object.values(CM_SCAN_STATUS)) {
         const inSet = SCAN_TERMINAL_STATUSES.has(status);
-        const expected = status === "done" || status === "failed" || status === "needs_human";
+        const expected = status === "done" || status === "failed" || status === "needs_human" || status === "verified";
         expect(inSet).toBe(expected);
       }
     });

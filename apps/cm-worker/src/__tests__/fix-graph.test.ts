@@ -66,27 +66,70 @@ function makeMockDb() {
     runs: [],
     usage_log: [],
   };
+  const scanStatusHistory: string[] = [];
 
-  function makeQueryBuilder(table: string, filters: Array<{ col: string; val: unknown }> = []) {
+  type Filter = { col: string; val: unknown; op: "eq" | "in" | "neq" };
+
+  function applyFilters(items: Array<Record<string, unknown>>, filters: Filter[]): Array<Record<string, unknown>> {
+    return items.filter((row) => filters.every((f) => {
+      if (f.op === "eq") return row[f.col] === f.val;
+      if (f.op === "neq") return row[f.col] !== f.val;
+      return Array.isArray(f.val) && (f.val as unknown[]).includes(row[f.col]);
+    }));
+  }
+
+  /** update() returns a chain that can take any number of .eq()/.neq()/.in() filters before resolving. */
+  function makeUpdateBuilder(table: string, payload: Record<string, unknown>, filters: Filter[]) {
+    const apply = () => {
+      for (const row of applyFilters(db[table] ?? [], filters)) Object.assign(row, payload);
+      if (table === "cm_scan" && typeof payload.status === "string") scanStatusHistory.push(payload.status);
+      return { error: null };
+    };
+    const builder: Record<string, unknown> = {
+      eq: vi.fn((col: string, val: unknown) => makeUpdateBuilder(table, payload, [...filters, { col, val, op: "eq" as const }])),
+      in: vi.fn((col: string, val: unknown) => makeUpdateBuilder(table, payload, [...filters, { col, val, op: "in" as const }])),
+      neq: vi.fn((col: string, val: unknown) => makeUpdateBuilder(table, payload, [...filters, { col, val, op: "neq" as const }])),
+      then: (resolve: (v: unknown) => void) => resolve(apply()),
+    };
+    return builder;
+  }
+
+  function makeQueryBuilder(table: string, filters: Filter[] = []) {
     const self: Record<string, unknown> = {
       select: vi.fn().mockReturnThis(),
-      eq: vi.fn((col: string, val: unknown) => makeQueryBuilder(table, [...filters, { col, val }])),
-      in: vi.fn().mockImplementation(() => Promise.resolve({ data: db[table] ?? [], error: null })),
+      eq: vi.fn((col: string, val: unknown) => makeQueryBuilder(table, [...filters, { col, val, op: "eq" }])),
+      in: vi.fn((col: string, val: unknown) => {
+        const withFilter = [...filters, { col, val, op: "in" as const }];
+        const next = makeQueryBuilder(table, withFilter);
+        // why: `.in()` is used both as a query-builder chain link (select().eq().in()
+        // returning a Promise-like directly, per the real supabase-js API) and
+        // sometimes as the terminal call after update() — support both by making
+        // the returned object itself thenable.
+        (next as unknown as { then: unknown }).then = (resolve: (v: unknown) => void) => {
+          resolve({ data: applyFilters(db[table] ?? [], withFilter), error: null });
+        };
+        return next;
+      }),
       single: vi.fn().mockImplementation(() => {
-        let items = db[table] ?? [];
-        for (const f of filters) items = items.filter((r) => r[f.col] === f.val);
+        const items = applyFilters(db[table] ?? [], filters);
         const item = items.at(-1) ?? null;
         return Promise.resolve({ data: item, error: item ? null : { message: "not found" } });
       }),
-      update: vi.fn((payload: Record<string, unknown>) => {
-        const items = db[table] ?? [];
-        if (items.length > 0) Object.assign(items[items.length - 1]!, payload);
-        return { eq: vi.fn().mockReturnThis(), in: vi.fn().mockResolvedValue({ error: null }) };
-      }),
+      update: vi.fn((payload: Record<string, unknown>) => makeUpdateBuilder(table, payload, filters)),
       insert: vi.fn((payload: Record<string, unknown>) => {
         const row = { id: `${table}-${Date.now()}-${Math.random()}`, ...payload };
         (db[table] ?? []).push(row);
         return makeQueryBuilder(table);
+      }),
+      upsert: vi.fn((payload: Record<string, unknown>) => {
+        const items = db[table] ?? [];
+        const existing = items.find((r) => r.scan_id === payload.scan_id && r.fingerprint === payload.fingerprint);
+        if (existing) {
+          Object.assign(existing, payload);
+        } else {
+          items.push({ id: `${table}-${Date.now()}-${Math.random()}`, ...payload });
+        }
+        return Promise.resolve({ error: null });
       }),
     };
     return self;
@@ -96,7 +139,7 @@ function makeMockDb() {
     from: vi.fn((table: string) => makeQueryBuilder(table)),
   };
 
-  return { supabase: supabase as never, db };
+  return { supabase: supabase as never, db, scanStatusHistory };
 }
 
 /** cm-fix-verifier is only dispatched for the ambiguous (signatures differ) case now — this controls what it returns when it IS called. */
@@ -228,10 +271,10 @@ describe("fix-graph", () => {
     }
   });
 
-  it("clean build (exit 0) reaches report without any verifier agent dispatch", async () => {
+  it("clean build (exit 0) reaches report without any verifier agent dispatch, passing through 'reporting' before 'verified'", async () => {
     const fixTmpDir = await makeNodeProjectDir();
     try {
-      const { supabase, db } = makeMockDb();
+      const { supabase, db, scanStatusHistory } = makeMockDb();
       const { runner, verifyRun } = makeAgentRunner();
       const ops = makeGitOps(fixTmpDir);
       const scanProvider = { scan: vi.fn().mockResolvedValue({ externalScanId: "x", findings: [] }), fetchResults: vi.fn() } as unknown as ScanProvider;
@@ -246,6 +289,114 @@ describe("fix-graph", () => {
       expect(verifyRun).not.toHaveBeenCalled();
       expect(result.verifyOutcome).toBe("pass");
       expect((db.cm_scan![0] as { status: string }).status).toBe("verified");
+      // why: the dashboard must never show "Verified" before the PDF actually
+      // exists — confirms the report node sets "reporting" first, generates
+      // the report, and only then "verified" (not straight to "verified").
+      expect(scanStatusHistory).toContain("reporting");
+      expect(scanStatusHistory.indexOf("reporting")).toBeLessThan(scanStatusHistory.lastIndexOf("verified"));
+    } finally {
+      await rm(fixTmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it("rescan does NOT overwrite findings_actionable with the remaining count (real production bug: a clean rescan zeroed out the scan's original actionable count, making the report say 'Actionable: 0' on a fully-remediated scan)", async () => {
+    const fixTmpDir = await makeNodeProjectDir();
+    try {
+      const { supabase, db } = makeMockDb();
+      (db.cm_scan![0] as Record<string, unknown>).findings_actionable = 26;
+      const { runner } = makeAgentRunner();
+      const ops = makeGitOps(fixTmpDir);
+      const scanProvider = {
+        scan: vi.fn().mockResolvedValue({ externalScanId: "x", findings: [] }),
+        fetchResults: vi.fn(),
+        rescanRest: vi.fn().mockResolvedValue({ externalScanId: "rescan-clean-1", findings: [] }),
+      } as unknown as ScanProvider;
+
+      queueBuildRuns({ buildOk: true }, { buildOk: true });
+
+      const graph = buildFixGraph({ supabase, scanProvider, agentRunner: runner, ops: ops as never, checkpointer: new MemorySaver() });
+      const config = { configurable: { thread_id: "scan-001" } };
+
+      await graph.invoke(BASE_INITIAL_STATE, config);
+
+      expect((db.cm_scan![0] as { findings_actionable: number }).findings_actionable).toBe(26);
+      expect((db.cm_scan![0] as { external_scan_id: string }).external_scan_id).toBe("rescan-clean-1");
+    } finally {
+      await rm(fixTmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it("rescan finding no longer reported by Checkmarx is closed as fixed, even though cm_finding previously had it mismarked (real production bug: findings mismarked skipped/fixed left the DB out of sync with the actual rescan result)", async () => {
+    const fixTmpDir = await makeNodeProjectDir();
+    try {
+      const { supabase, db } = makeMockDb();
+      // Precondition mirroring the real bug: cm_finding still has this
+      // CRITICAL/HIGH fingerprint marked "skipped" from an earlier (buggy)
+      // pass, even though the fix branch's rescan no longer reports it.
+      (db.cm_finding as Array<Record<string, unknown>>).push({
+        id: "row-1", scan_id: "scan-001", fingerprint: "fp-1", severity: "HIGH", fix_status: "skipped",
+      });
+
+      const { runner, verifyRun } = makeAgentRunner();
+      const ops = makeGitOps(fixTmpDir);
+      // rescanRest reports the branch IS clean now — Checkmarx no longer sees fp-1.
+      const scanProvider = {
+        scan: vi.fn().mockResolvedValue({ externalScanId: "x", findings: [] }),
+        fetchResults: vi.fn(),
+        rescanRest: vi.fn().mockResolvedValue({ externalScanId: "rescan-1", findings: [] }),
+      } as unknown as ScanProvider;
+
+      queueBuildRuns({ buildOk: true }, { buildOk: true });
+
+      const graph = buildFixGraph({ supabase, scanProvider, agentRunner: runner, ops: ops as never, checkpointer: new MemorySaver() });
+      const config = { configurable: { thread_id: "scan-001" } };
+
+      await graph.invoke(BASE_INITIAL_STATE, config);
+
+      expect(verifyRun).not.toHaveBeenCalled();
+      expect((db.cm_scan![0] as { status: string; external_scan_id: string }).status).toBe("verified");
+      expect((db.cm_scan![0] as { external_scan_id: string }).external_scan_id).toBe("rescan-1");
+      const staleRow = (db.cm_finding as Array<Record<string, unknown>>).find((r) => r.fingerprint === "fp-1");
+      expect(staleRow?.fix_status).toBe("fixed");
+    } finally {
+      await rm(fixTmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it("rescan still reports a CRITICAL/HIGH finding — upserts it as open in cm_finding and retries instead of trusting stale DB status", async () => {
+    const fixTmpDir = await makeNodeProjectDir();
+    try {
+      const { supabase, db } = makeMockDb();
+      // The finding was previously (wrongly) marked "skipped" in cm_finding —
+      // this is the exact real production bug precondition — but Checkmarx's
+      // rescan still reports it as a live CRITICAL/HIGH finding.
+      (db.cm_finding as Array<Record<string, unknown>>).push({
+        id: "row-1", scan_id: "scan-001", fingerprint: "fp-1", severity: "HIGH", fix_status: "skipped",
+      });
+
+      const { runner } = makeAgentRunner();
+      const ops = makeGitOps(fixTmpDir);
+      const scanProvider = {
+        scan: vi.fn().mockResolvedValue({ externalScanId: "x", findings: [] }),
+        fetchResults: vi.fn(),
+        rescanRest: vi.fn().mockResolvedValue({
+          externalScanId: "rescan-1",
+          findings: [{ ...FINDING, severity: "HIGH" }],
+        }),
+      } as unknown as ScanProvider;
+
+      queueBuildRuns({ buildOk: true }, { buildOk: true });
+
+      const graph = buildFixGraph({ supabase, scanProvider, agentRunner: runner, ops: ops as never, checkpointer: new MemorySaver() });
+      const config = { configurable: { thread_id: "scan-001" } };
+
+      const result = await graph.invoke(BASE_INITIAL_STATE, config);
+
+      // Must NOT reach "verified" — the sync in rescanFixBranch re-opens the
+      // finding cm_finding had wrong, so the graph correctly retries.
+      expect(result.attempt).toBeGreaterThan(1);
+      const row = (db.cm_finding as Array<Record<string, unknown>>).find((r) => r.fingerprint === "fp-1");
+      expect(row?.fix_status).toBe("open");
     } finally {
       await rm(fixTmpDir, { recursive: true, force: true }).catch(() => {});
     }

@@ -3,14 +3,16 @@ import { accessSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AgentRunner, AgentRunnerTask, AgentRunnerResult } from "./agent-runner.js";
 
-const TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-// why: cm-fix-planner triages every actionable finding in one call (can be
-// 50+ findings, each researched via tavily/context7) — the default budget
-// isn't enough and was silently discarding the agent's finished JSON on kill.
-const PLANNER_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+// why: every agent (planner, sca, sast, verifier) can legitimately need this
+// long — triaging/fixing 50+ findings with tavily/context7 research and
+// mvn dependency:tree/build verification per finding takes real wall-clock
+// time. A shorter budget was killing agents mid-task (confirmed in production:
+// cm-sca-agent killed at 600s while still validating dependency versions),
+// and the kill was then misread downstream as a completed, unverified "fixed".
+const AGENT_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 
-function timeoutForAgent(agentName: string): number {
-  return agentName === "cm-fix-planner" ? PLANNER_TIMEOUT_MS : TIMEOUT_MS;
+function timeoutForAgent(_agentName: string): number {
+  return AGENT_TIMEOUT_MS;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +301,7 @@ export class ClaudeRunner implements AgentRunner {
     return {
       summary,
       changed: false, // caller sets this after git diff
+      success,
       usage,
     };
   }

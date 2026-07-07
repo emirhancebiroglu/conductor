@@ -20,7 +20,6 @@ type CmScan = {
   findings_actionable: number;
   branch_scanned: string | null;
   current_step: string | null;
-  pr_url: string | null;
   report_path: string | null;
   error: string | null;
   started_at: string | null;
@@ -70,10 +69,8 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string;
   run_blocked: { color: "#fb923c", bg: "rgba(251,146,60,0.08)", border: "rgba(251,146,60,0.2)", label: "Run Blocked" },
   fixed:       { color: "#34d399", bg: "rgba(52,211,153,0.08)", border: "rgba(52,211,153,0.2)", label: "Fixed" },
   rescanning:  { color: "#f59e0b", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", pulse: true, label: "Rescanning" },
+  reporting:   { color: "#60a5fa", bg: "rgba(96,165,250,0.08)", border: "rgba(96,165,250,0.2)", pulse: true, label: "Generating Report" },
   verified:    { color: "#34d399", bg: "rgba(52,211,153,0.08)", border: "rgba(52,211,153,0.2)", label: "Verified" },
-  pr_opening:  { color: "#818cf8", bg: "rgba(129,140,248,0.08)", border: "rgba(129,140,248,0.2)", pulse: true, label: "Opening PR" },
-  pr_opened:   { color: "#818cf8", bg: "rgba(129,140,248,0.08)", border: "rgba(129,140,248,0.2)", label: "PR Opened" },
-  reporting:   { color: "#60a5fa", bg: "rgba(96,165,250,0.08)", border: "rgba(96,165,250,0.2)", pulse: true, label: "Reporting" },
   done:        { color: "#34d399", bg: "rgba(52,211,153,0.08)", border: "rgba(52,211,153,0.2)", label: "Done" },
   failed:      { color: "#f87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.2)", label: "Failed" },
   needs_human: { color: "#fb923c", bg: "rgba(251,146,60,0.08)", border: "rgba(251,146,60,0.2)", label: "Needs Review" },
@@ -166,7 +163,12 @@ export function CmRunsTab() {
     setFindingsTab("all");
   }, []);
 
-  const activeScans = scans.filter(s => !["done", "failed", "scan_failed", "scan_done"].includes(s.status));
+  // why: must match the worker's real terminal states (packages/cm-core/src/scan-states.ts
+  // SCAN_TERMINAL_STATUSES + scan_failed/scan_done, which the worker also never
+  // resumes from automatically) — "verified" and "needs_human" are end states
+  // now that the pipeline stops after committing to the fix branch (no PR step).
+  const TERMINAL_STATUSES = ["done", "failed", "scan_failed", "scan_done", "verified", "needs_human"];
+  const activeScans = scans.filter(s => !TERMINAL_STATUSES.includes(s.status));
 
   const { sast: detailSast, sca: detailSca } = selectedScan ? groupFindings(selectedScan.findings) : { sast: [], sca: [] };
   const shownFindings = findingsTab === "sast" ? detailSast : findingsTab === "sca" ? detailSca : selectedScan?.findings ?? [];
@@ -211,7 +213,7 @@ export function CmRunsTab() {
             <div className="rn-list">
               {scans.map((scan, i) => {
                 const isActive = selectedId === scan.id;
-                const isRunning = !["done", "failed", "scan_failed", "scan_done", "pr_opened"].includes(scan.status);
+                const isRunning = !TERMINAL_STATUSES.includes(scan.status);
                 return (
                   <div
                     key={scan.id}
@@ -448,18 +450,6 @@ export function CmRunsTab() {
                   </div>
                 )}
 
-                {/* Links */}
-                {(selectedScan.scan.pr_url || selectedScan.scan.report_path) && (
-                  <div className="rn-section">
-                    <div className="rn-section-title">Links</div>
-                    {selectedScan.scan.pr_url && (
-                      <a href={selectedScan.scan.pr_url} target="_blank" rel="noopener noreferrer" className="rn-pr-link">
-                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="3" cy="3" r="1.5" stroke="currentColor" strokeWidth="1.2"/><circle cx="9" cy="9" r="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M9 4.5V3M3 7.5V9M3 4.5v1.5a1.5 1.5 0 0 0 1.5 1.5H9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-                        View Pull Request →
-                      </a>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>

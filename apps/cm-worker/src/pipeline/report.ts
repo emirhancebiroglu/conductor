@@ -45,6 +45,12 @@ export async function generatePipelineReport(
   supabase: SupabaseClient,
   scanId: string,
   reportDir: string,
+  // why: the caller (fix-graph.ts) is mid-transition when this runs — it sets
+  // "reporting" before calling this, then "verified" after it succeeds. Reading
+  // cm_scan.status fresh here would show "reporting" in the PDF's Final Status
+  // line. Taking the intended final status as an explicit parameter removes
+  // that coupling between node-execution-order and report content correctness.
+  finalStatus: string,
 ): Promise<string> {
   const scanResp = await supabase
     .from("cm_scan")
@@ -72,6 +78,13 @@ export async function generatePipelineReport(
 
   const findings = rawFindings.map((f) => {
     const isDecided = f.fix_status === "skipped" || f.fix_status === "failed" || f.fix_status === "needs_human";
+    let whatWasDone: string | null = null;
+    if (f.fix_status === "fixed") {
+      whatWasDone = f.source === "sca"
+        ? `Upgraded ${f.package ?? "package"} from ${f.current_version ?? "?"} to ${f.fixed_version ?? "?"}`
+        : f.fix_notes;
+    }
+    const skipReason = isDecided ? f.fix_notes : null;
     return {
       severity: f.severity,
       source: f.source,
@@ -80,14 +93,9 @@ export async function generatePipelineReport(
       currentVersion: f.current_version,
       fixedVersion: f.fixed_version,
       fixStatus: f.fix_status,
-      skipReason: isDecided ? f.fix_notes : null,
-      whatWasDone: f.fix_status === "fixed"
-        ? (f.source === "sca"
-          ? `Upgraded ${f.package ?? "package"} from ${f.current_version ?? "?"} to ${f.fixed_version ?? "?"}`
-          : f.fix_notes)
-        : null,
       impactLevel: f.source === "sca" ? (f.upgrade_impact as "MAJOR" | "MID" | "MINOR" | null) : null,
-      analystTestNote: deriveAnalystTestNote(f),
+      test: deriveAnalystTestNote(f),
+      notes: whatWasDone ?? skipReason ?? "",
     };
   });
 
@@ -96,14 +104,6 @@ export async function generatePipelineReport(
     .map((f) => ({
       rule: f.rule ?? f.package ?? "unknown",
       evidence: f.fix_notes ?? "No evidence recorded",
-    }));
-
-  const fixesApplied = rawFindings
-    .filter((f) => f.fix_status === "fixed" || f.fix_status === "skipped")
-    .map((f) => ({
-      findingRule: f.rule ?? f.package ?? "unknown",
-      applied: f.fix_status === "fixed",
-      result: f.fix_status === "fixed" ? "Fixed" : "Skipped",
     }));
 
   const [operatorLogo, customerLogo] = await Promise.all([
@@ -115,14 +115,13 @@ export async function generatePipelineReport(
     scan: {
       id: scan.id,
       repoName,
-      status: scan.status,
+      status: finalStatus,
       findingsTotal: scan.findings_total,
       findingsActionable: scan.findings_actionable,
       startedAt: scan.started_at,
       finishedAt: scan.finished_at,
     },
     findings,
-    fixes: fixesApplied,
     needsHuman,
     operatorLogo,
     customerLogo,

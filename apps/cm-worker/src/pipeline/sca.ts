@@ -22,10 +22,18 @@ export type ScaFixResult = {
 
 type SemverParts = { major: number; minor: number; patch: number };
 
+// why: real version strings frequently carry a trailing vendor/build suffix
+// that isn't itself numeric (e.g. "12.8.1.jre11", "4.1.115.Final",
+// "2.18.2.redhat-00002") — only the leading major.minor.patch triple matters
+// for impact classification. Splitting on "." and requiring every part to
+// parse as a number (the old approach) made any suffixed version look
+// "unparseable" and fall back to MAJOR, which corrupted the impact column
+// for a large fraction of real Checkmarx SCA findings (Java/Maven ecosystem
+// versions almost always carry a suffix).
 function parseVersion(v: string): SemverParts | null {
-  const parts = v.split(".").map((s) => Number.parseInt(s, 10));
-  if (parts.length < 3 || parts.some(Number.isNaN)) return null;
-  return { major: parts[0]!, minor: parts[1]!, patch: parts[2]! };
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(v);
+  if (!match) return null;
+  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
 }
 
 export function labelUpgradeImpact(current: string, target: string): UpgradeImpact {
@@ -43,7 +51,7 @@ export function labelUpgradeImpact(current: string, target: string): UpgradeImpa
 // ---------------------------------------------------------------------------
 
 type PlanItem = PlannerResult["items"][number];
-type DispatchItem = { finding: CmFinding; planItem: PlanItem | undefined; impact: UpgradeImpact };
+type DispatchItem = { finding: CmFinding; planItem: PlanItem | undefined; impact: UpgradeImpact; skipTest: boolean };
 
 type ScaFindingsOptions = {
   supabase: SupabaseClient;
@@ -57,9 +65,10 @@ type ScaFindingsOptions = {
   planItems: PlannerResult["items"];
 };
 
-function describeFinding({ finding, planItem, impact }: DispatchItem): string {
+function describeFinding({ finding, planItem, impact, skipTest }: DispatchItem): string {
   const strategy = planItem?.strategy ?? "upgrade";
   const notes = planItem?.notes ?? "";
+  const testNote = skipTest ? " | test: SKIP (MINOR upgrade per sca_test_policy — still apply the fix, just skip build/test verification for this one)" : "";
 
   if (strategy === "mitigate") {
     return `- fingerprint: ${finding.fingerprint}
@@ -70,7 +79,7 @@ function describeFinding({ finding, planItem, impact }: DispatchItem): string {
 
   const targetVer = planItem?.targetVersion ?? finding.fixedVersion ?? "unknown";
   return `- fingerprint: ${finding.fingerprint}
-  package: ${finding.package ?? "unknown"} v${finding.currentVersion ?? "?"} → ${targetVer} | impact: ${impact} | severity: ${finding.severity} | rule: ${finding.rule ?? "unknown"}
+  package: ${finding.package ?? "unknown"} v${finding.currentVersion ?? "?"} → ${targetVer} | impact: ${impact} | severity: ${finding.severity} | rule: ${finding.rule ?? "unknown"}${testNote}
   planner notes: ${notes}`;
 }
 
@@ -102,16 +111,17 @@ async function preFilterFindings(
     const impact = labelUpgradeImpact(currentVer, targetVer);
     const isMitigation = planItem?.strategy === "mitigate";
 
-    if (policy === "skip-minor" && impact === "MINOR" && !isMitigation) {
-      await supabase
-        .from("cm_finding")
-        .update({ fix_status: "skipped", fix_notes: "MINOR upgrade skipped per sca_test_policy" })
-        .eq("id", finding.id);
-      decided.push({ finding, impact, tested: false, fixStatus: "skipped" });
-      continue;
-    }
+    // why: skip-minor policy means "don't spend build/test time re-verifying
+    // a MINOR bump" — it must NOT mean "don't fix it". A CRITICAL/HIGH finding
+    // (this is the only severity that ever reaches this pipeline) still needs
+    // its version bumped and dependency-tree-confirmed; only the build/test
+    // run is skippable. Confirmed in production: the old "skip the fix
+    // entirely" behavior left dozens of real CRITICAL/HIGH SCA findings
+    // completely untouched while still being marked "skipped" and let the
+    // pipeline report "verified".
+    const skipTest = policy === "skip-minor" && impact === "MINOR" && !isMitigation;
 
-    toDispatch.push({ finding, planItem, impact });
+    toDispatch.push({ finding, planItem, impact, skipTest });
   }
 
   return { decided, toDispatch };
@@ -180,13 +190,19 @@ export async function processScaFindings(opts: ScaFindingsOptions): Promise<ScaF
 
     const jsonMatch = /\{[\s\S]*\}/m.exec(result.summary);
     const parsed = jsonMatch ? CmBatchFixResultSchema.safeParse(JSON.parse(jsonMatch[0])) : null;
+    // why: `changed` (git diff) is not proof of a completed, verified fix —
+    // an agent killed mid-task (timeout) can leave partial edits behind that
+    // still register as "changed". Only treat the fallback as "fixed" when
+    // the agent process itself exited cleanly (result.success); a killed or
+    // failed process always falls back to "failed" regardless of git state,
+    // since no per-finding JSON verdict from it can be trusted either way.
     const fallback: { fixStatus: "fixed" | "failed"; notes: string } = {
-      fixStatus: result.changed ? "fixed" : "failed",
+      fixStatus: result.success && result.changed ? "fixed" : "failed",
       notes: result.summary,
     };
 
     if (!parsed?.success) {
-      console.warn(`[sca] batch fix result JSON missing/invalid for scan ${scanId}, falling back to overall changed status`);
+      console.warn(`[sca] batch fix result JSON missing/invalid for scan ${scanId}, falling back to overall changed status (agent success=${result.success})`);
     }
 
     const byFingerprint = parsed?.success

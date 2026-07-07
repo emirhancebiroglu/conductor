@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { CmPipelineForm } from "./cm-pipeline-form";
 import { CmReposTab } from "./cm-repos-tab";
 import { CmRunsTab } from "./cm-runs-tab";
+import { CmReportsTab } from "./cm-reports-tab";
 
 type Tab = "pipeline" | "repos" | "runs" | "reports";
 
@@ -58,12 +59,7 @@ function CmClientInner() {
         {activeTab === "pipeline" && <CmPipelineForm />}
         {activeTab === "repos" && <CmReposTab />}
         {activeTab === "runs" && <CmRunsTab />}
-        {activeTab === "reports" && (
-          <div className="cm-placeholder" style={{ padding: "60px", textAlign: "center", color: "var(--text-dim)", border: "1px dashed var(--border)", fontSize: "12px" }}>
-            <div style={{ fontSize: "24px", marginBottom: "12px", opacity: 0.3 }}>⬡</div>
-            Reports generation not yet enabled.
-          </div>
-        )}
+        {activeTab === "reports" && <CmReportsTab />}
       </div>
 
       <style jsx>{`

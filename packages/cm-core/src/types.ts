@@ -4,6 +4,10 @@ import { z } from "zod";
 // Primitives / enums
 // ---------------------------------------------------------------------------
 
+// why: no pr_opening/pr_opened — the pipeline stops after committing+pushing
+// to the fix branch (verified is the real terminal success state); "reporting"
+// IS real (PDF generation between a clean rescan and verified); see
+// scan-states.ts for the rationale.
 export const CmScanStatusSchema = z.enum([
   "queued",
   "scanning",
@@ -13,10 +17,8 @@ export const CmScanStatusSchema = z.enum([
   "run_blocked",
   "fixed",
   "rescanning",
-  "verified",
-  "pr_opening",
-  "pr_opened",
   "reporting",
+  "verified",
   "done",
   "failed",
   "needs_human",

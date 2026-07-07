@@ -82,7 +82,7 @@ describe("processSastFindings", () => {
           { fingerprint: SAST_FINDING_2.fingerprint, fixStatus: "fixed", notes: "encoded output" },
         ],
       }),
-      changed: true, runId: "r1", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 40,
+      changed: true, success: true, runId: "r1", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 100, outputTokens: 40,
     });
 
     await processSastFindings({ ...OPTS_BASE, supabase, agentRunner: stubRunner, findings: [SAST_FINDING, SAST_FINDING_2] });
@@ -127,7 +127,7 @@ describe("processSastFindings", () => {
     const { supabase } = makeSupabase();
     mockDispatchAgent.mockResolvedValueOnce({
       summary: JSON.stringify({ results: [{ fingerprint: SAST_FINDING_2.fingerprint, fixStatus: "fixed", notes: "fixed" }] }),
-      changed: true, runId: "r2", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 50, outputTokens: 20,
+      changed: true, success: true, runId: "r2", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 50, outputTokens: 20,
     });
 
     const results = await processSastFindings({
@@ -160,13 +160,27 @@ describe("processSastFindings", () => {
     const { supabase } = makeSupabase();
     mockDispatchAgent.mockResolvedValueOnce({
       summary: "I fixed everything, trust me.",
-      changed: true, runId: "r3", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 50, outputTokens: 20,
+      changed: true, success: true, runId: "r3", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 50, outputTokens: 20,
     });
 
     const results = await processSastFindings({ ...OPTS_BASE, supabase, agentRunner: stubRunner, findings: [SAST_FINDING, SAST_FINDING_2] });
 
     expect(results).toHaveLength(2);
     for (const r of results) expect(r.fixStatus).toBe("fixed");
+  });
+
+  it("never marks 'fixed' via the changed-status fallback when the agent process itself failed/was killed (e.g. timeout) — must fall back to 'failed' regardless of git diff", async () => {
+    mockDispatchAgent.mockClear();
+    const { supabase } = makeSupabase();
+    mockDispatchAgent.mockResolvedValueOnce({
+      summary: "[timeout after 3600s]",
+      changed: true, success: false, runId: "r4", agentName: "cm-sast-agent", model: "claude-sonnet-4-6", inputTokens: 50, outputTokens: 20,
+    });
+
+    const results = await processSastFindings({ ...OPTS_BASE, supabase, agentRunner: stubRunner, findings: [SAST_FINDING, SAST_FINDING_2] });
+
+    expect(results).toHaveLength(2);
+    for (const r of results) expect(r.fixStatus).toBe("failed");
   });
 
   it("marks all dispatched findings failed and does NOT throw when dispatch throws", async () => {

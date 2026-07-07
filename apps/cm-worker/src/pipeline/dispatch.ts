@@ -19,6 +19,8 @@ export type DispatchResult = {
   inputTokens: number;
   outputTokens: number;
   changed: boolean;
+  /** False if the agent process failed or was killed (e.g. timeout) rather than exiting cleanly. */
+  success: boolean;
   summary: string;
 };
 
@@ -99,6 +101,7 @@ export async function dispatchAgent(
     inputTokens: result.usage.inputTokens,
     outputTokens: result.usage.outputTokens,
     changed,
+    success: result.success,
     summary: result.summary,
   };
 }

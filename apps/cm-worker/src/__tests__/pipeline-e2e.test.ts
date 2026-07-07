@@ -3,23 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-const { mockPullsCreate } = vi.hoisted(() => ({
-  mockPullsCreate: vi.fn(),
-}));
-
-vi.mock("@octokit/rest", () => ({
-  Octokit: vi.fn(() => ({
-    rest: {
-      pulls: { create: mockPullsCreate },
-    },
-  })),
-}));
-
 import { handleScan } from "../handlers/scan.js";
 import { handleFix } from "../handlers/fix.js";
-import { handleRescan } from "../handlers/rescan.js";
-import { handlePushAndPR } from "../handlers/push-pr.js";
-import { MockScanProvider, StubRunner } from "@conductor/cm-adapters";
+import { MockScanProvider } from "@conductor/cm-adapters";
 import type { ScanProvider } from "@conductor/cm-adapters";
 import { MemorySaver } from "@langchain/langgraph";
 
@@ -39,17 +25,31 @@ function createMockDb() {
 
   const capture: Array<{ table: string; payload: Record<string, unknown> }> = [];
 
-  function makeQueryBuilder(table: string, filters?: Array<{ col: string; val: unknown }>) {
-    const f: Array<{ col: string; val: unknown }> = filters ?? [];
+  function matchFilters(items: Array<Record<string, unknown>>, filters: Array<{ col: string; val: unknown; isIn?: boolean }>): Array<Record<string, unknown>> {
+    return items.filter((row) => filters.every((filter) => (
+      filter.isIn ? Array.isArray(filter.val) && (filter.val as unknown[]).includes(row[filter.col]) : row[filter.col] === filter.val
+    )));
+  }
+
+  function makeQueryBuilder(table: string, filters?: Array<{ col: string; val: unknown; isIn?: boolean }>) {
+    const f: Array<{ col: string; val: unknown; isIn?: boolean }> = filters ?? [];
     const self: Record<string, unknown> = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn((col: string, val: unknown) => {
         f.push({ col, val });
         return self;
       }),
-      in: vi.fn().mockImplementation(() => {
-        const items = db[table] ?? [];
-        return Promise.resolve({ data: items, error: null });
+      // why: `.in()` chains just like `.eq()` (a select query can filter on
+      // several `.in()` clauses, e.g. severity + fix_status) but is ALSO the
+      // terminal call in supabase-js when no `.single()`/`.maybeSingle()`
+      // follows — making it thenable lets both usages work with the same mock.
+      in: vi.fn((col: string, val: unknown) => {
+        f.push({ col, val, isIn: true });
+        const next = { ...self };
+        (next as unknown as { then: unknown }).then = (resolve: (v: unknown) => void) => {
+          resolve({ data: matchFilters(db[table] ?? [], f), error: null });
+        };
+        return next;
       }),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
@@ -130,9 +130,8 @@ function createMockDb() {
 }
 
 describe("full pipeline (P0–P4 acceptance gate)", () => {
-  it("drives scheduler → scan → fix → rescan → PR → report → done with mocked externals", async () => {
+  it("drives scheduler → scan → fix → rescan → report → verified with mocked externals", async () => {
     const scanProvider = new MockScanProvider();
-    const agentRunner = new StubRunner();
     const { supabase, seed, getLatest, getAll } = createMockDb();
     const pipelineId = "pipe-001";
     const repoId = "repo-001";
@@ -157,12 +156,8 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
       ]);
 
       seed("cm_scan", [
-        { id: scanId, repo_id: repoId, workspace_id: wsId, status: "queued", provider: "checkmarx", trigger: "manual", findings_total: 0, findings_actionable: 0, error: null, current_step: null, pr_url: null, report_path: null, started_at: null, finished_at: null, created_at: "2026-06-03T12:00:00Z", updated_at: "2026-06-03T12:00:00Z" },
+        { id: scanId, repo_id: repoId, workspace_id: wsId, status: "queued", provider: "checkmarx", trigger: "manual", findings_total: 0, findings_actionable: 0, error: null, current_step: null, report_path: null, started_at: null, finished_at: null, created_at: "2026-06-03T12:00:00Z", updated_at: "2026-06-03T12:00:00Z" },
       ]);
-
-      mockPullsCreate.mockResolvedValue({
-        data: { html_url: "https://github.com/test/ms-test-repo/pull/1" },
-      });
 
       // === STAGE 1: Run the scan handler ===
       await handleScan(supabase as never, scanProvider, { scanId });
@@ -174,7 +169,9 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
       const findings = getAll("cm_finding");
       expect(findings.length).toBeGreaterThan(0);
 
-      // === STAGE 2: Fix handler (now includes rescan + PR + report inline) ===
+      // === STAGE 2: Fix handler (now includes rescan + report inline; the
+      // pipeline stops at "verified" — it commits+pushes to the fix branch
+      // and never opens a PR, a human takes it from there) ===
       // Configure agent runner to return PASS: for the verifier
       const passingAgentRunner: import("@conductor/cm-adapters").AgentRunner = {
         run: vi.fn().mockImplementation(async (agentConfig, task) => {
@@ -240,10 +237,6 @@ describe("full pipeline (P0–P4 acceptance gate)", () => {
         diffPatch: vi.fn().mockResolvedValue(""),
         applyPatch: vi.fn().mockResolvedValue(true),
       };
-
-      mockPullsCreate.mockResolvedValue({
-        data: { html_url: "https://github.com/test/ms-test-repo/pull/1" },
-      });
 
       const checkpointer = new MemorySaver();
       await handleFix(supabase as never, rescanProvider, passingAgentRunner, checkpointer, scanId, mockGitOps as never);

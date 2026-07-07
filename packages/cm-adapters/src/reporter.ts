@@ -37,16 +37,11 @@ type ReportFinding = {
   currentVersion: string | null;
   fixedVersion: string | null;
   fixStatus: string;
-  skipReason: string | null;
-  whatWasDone: string | null;
   impactLevel: "MAJOR" | "MID" | "MINOR" | null;
-  analystTestNote: string;
-};
-
-type ReportFix = {
-  findingRule: string;
-  applied: boolean;
-  result: string;
+  /** What an analyst should verify — populated for MAJOR SCA upgrades and always for SAST fixes; "No need"/empty otherwise. */
+  test: string;
+  /** Short what-was-done-or-why-not description, collapsing whatWasDone/skipReason into one column. */
+  notes: string;
 };
 
 type ReportNeedsHuman = {
@@ -63,7 +58,6 @@ type ReportLogo = {
 type ReportInput = {
   scan: ReportScan;
   findings: ReportFinding[];
-  fixes: ReportFix[];
   needsHuman?: ReportNeedsHuman[] | undefined;
   operatorLogo?: ReportLogo | undefined;
   customerLogo?: ReportLogo | undefined;
@@ -97,6 +91,15 @@ function logoDataUrl(logo: ReportLogo): string {
   return `data:image/png;base64,${logo.buffer.toString("base64")}`;
 }
 
+/** Formats an ISO timestamp as "YYYY-MM-DD HH:mm" (local time) instead of the raw ISO string with timezone offset. */
+function formatDate(iso: string | null): string {
+  if (!iso) return "N/A";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "N/A";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function headerCell(text: string): PdfTableCell {
   return { text, bold: true, color: REPORT_THEME.paper, fillColor: REPORT_THEME.crimsonDark, fontSize: 9 };
 }
@@ -104,6 +107,10 @@ function headerCell(text: string): PdfTableCell {
 function dataCell(text: string, color?: string): PdfTableCell {
   return { text, fontSize: 9, ...(color ? { color } : {}) };
 }
+
+// why: A4 landscape content width — page width 842pt minus 40pt margins on
+// each side (802 - 80 = 762pt of usable content width for full-bleed lines).
+const CONTENT_WIDTH = 762;
 
 function buildLetterhead(operatorLogo?: ReportLogo, customerLogo?: ReportLogo): Content {
   const maxWidth = 120;
@@ -126,7 +133,7 @@ function buildLetterhead(operatorLogo?: ReportLogo, customerLogo?: ReportLogo): 
           { width: "50%", stack: [right] },
         ],
       },
-      { canvas: [{ type: "line", x1: 0, y1: 8, x2: 515, y2: 8, lineWidth: 2, lineColor: REPORT_THEME.crimson }] },
+      { canvas: [{ type: "line", x1: 0, y1: 8, x2: CONTENT_WIDTH, y2: 8, lineWidth: 2, lineColor: REPORT_THEME.crimson }] },
     ],
   };
 }
@@ -135,7 +142,7 @@ function buildFooter(currentPage: number, pageCount: number): Content {
   return {
     margin: [40, 10, 40, 0],
     stack: [
-      { canvas: [{ type: "line", x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: "#CCCCCC" }] },
+      { canvas: [{ type: "line", x1: 0, y1: 0, x2: CONTENT_WIDTH, y2: 0, lineWidth: 0.5, lineColor: "#CCCCCC" }] },
       {
         margin: [0, 4, 0, 0],
         columns: [
@@ -169,9 +176,9 @@ export async function generateReport(input: ReportInput): Promise<Buffer> {
   const findingsTable: Content = {
     table: {
       headerRows: 1,
-      widths: ["10%", "8%", "27%", "20%", "10%", "25%"],
+      widths: ["7%", "6%", "19%", "13%", "8%", "7%", "17%", "23%"],
       body: [
-        ["Severity", "Source", "Rule / Package", "Version", "Status", "Impact"].map(headerCell),
+        ["Severity", "Source", "Rule / Package", "Version", "Status", "Impact", "Test", "Notes"].map(headerCell),
         ...input.findings.map((f) => [
           dataCell(f.severity, severityColor(f.severity)),
           dataCell(f.source),
@@ -179,52 +186,13 @@ export async function generateReport(input: ReportInput): Promise<Buffer> {
           dataCell(f.source === "sca" ? `${f.currentVersion ?? ""} -> ${f.fixedVersion ?? ""}` : ""),
           dataCell(f.fixStatus),
           dataCell(f.impactLevel ?? (f.source === "sast" ? "n/a" : "")),
+          dataCell(f.test),
+          dataCell(f.notes),
         ]),
       ],
     },
     layout: { hLineColor: () => "#DDDDDD", vLineColor: () => "#DDDDDD" },
   };
-
-  const findingsDetail: Content = {
-    stack: input.findings.map((f): Content => {
-      const label = f.rule ?? f.package ?? "unknown";
-      const lines: string[] = [];
-      if (f.fixStatus === "fixed" && f.whatWasDone) {
-        lines.push(`What was done: ${f.whatWasDone}`);
-      }
-      if ((f.fixStatus === "skipped" || f.fixStatus === "failed" || f.fixStatus === "needs_human") && f.skipReason) {
-        lines.push(`Reason: ${f.skipReason}`);
-      }
-      lines.push(`Analyst test note: ${f.analystTestNote}`);
-
-      return {
-        margin: [0, 0, 0, 8],
-        stack: [
-          { text: `${label} (${f.severity}, ${f.source.toUpperCase()}) — ${f.fixStatus}`, bold: true, fontSize: 9, color: REPORT_THEME.ink },
-          ...lines.map((line) => ({ text: line, fontSize: 8, color: REPORT_THEME.muted, margin: [8, 1, 0, 0] as [number, number, number, number] })),
-        ],
-      };
-    }),
-  };
-
-  const fixesTable: Content =
-    input.fixes.length > 0
-      ? {
-          table: {
-            headerRows: 1,
-            widths: ["35%", "15%", "50%"],
-            body: [
-              ["Finding", "Applied", "Result"].map(headerCell),
-              ...input.fixes.map((f) => [
-                dataCell(f.findingRule),
-                dataCell(f.applied ? "Yes" : "No"),
-                dataCell(f.result),
-              ]),
-            ],
-          },
-          layout: { hLineColor: () => "#DDDDDD", vLineColor: () => "#DDDDDD" },
-        }
-      : body("No fixes were applied.");
 
   const needsHuman = input.needsHuman ?? [];
   const needsHumanTable: Content =
@@ -245,6 +213,7 @@ export async function generateReport(input: ReportInput): Promise<Buffer> {
   const docDefinition: TDocumentDefinitions = {
     info: { title: `CM Report - ${input.scan.repoName}`, subject: "32bit Checkmarx Pipeline Scan Report" },
     pageSize: "A4",
+    pageOrientation: "landscape",
     pageMargins: [40, 90, 40, 60],
     header: buildLetterhead(input.operatorLogo, input.customerLogo),
     footer: buildFooter,
@@ -256,17 +225,11 @@ export async function generateReport(input: ReportInput): Promise<Buffer> {
       body(`Status: ${input.scan.status}`),
       body(`Total findings: ${input.scan.findingsTotal}`),
       body(`Actionable (CRIT/HIGH): ${input.scan.findingsActionable}`),
-      body(`Started: ${input.scan.startedAt ?? "N/A"}`),
-      body(`Finished: ${input.scan.finishedAt ?? "N/A"}`),
+      body(`Started: ${formatDate(input.scan.startedAt)}`),
+      body(`Finished: ${formatDate(input.scan.finishedAt)}`),
 
       subheading("Findings"),
       findingsTable,
-
-      subheading("Findings — Details"),
-      findingsDetail,
-
-      subheading("Fixes Applied"),
-      fixesTable,
 
       subheading("Needs Human Review"),
       needsHumanTable,

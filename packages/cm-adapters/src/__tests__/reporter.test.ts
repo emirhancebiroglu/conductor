@@ -9,7 +9,11 @@ async function extractText(buffer: Buffer): Promise<string> {
   const parser = new PDFParse({ data: buffer });
   const result = await parser.getText();
   await parser.destroy();
-  return result.text;
+  // why: pdf-parse reflows table-cell text across line breaks depending on
+  // column width (landscape layout wraps differently than the old portrait
+  // layout did) — normalize all whitespace/newlines to single spaces so
+  // toContain() checks aren't sensitive to exactly where a cell's text wraps.
+  return result.text.replace(/\s+/g, " ");
 }
 
 // Minimal valid 2x1 PNG (IHDR width=2, height=1) for loadLogo dimension probing.
@@ -37,10 +41,9 @@ const MOCK_FINDINGS = [
     currentVersion: "4.17.20",
     fixedVersion: "4.17.21",
     fixStatus: "fixed",
-    skipReason: null,
-    whatWasDone: "Upgraded lodash from 4.17.20 to 4.17.21",
     impactLevel: "MINOR" as const,
-    analystTestNote: "No need — minor/mid upgrade, no manual test required.",
+    test: "No need — minor/mid upgrade, no manual test required.",
+    notes: "Upgraded lodash from 4.17.20 to 4.17.21",
   },
   {
     severity: "HIGH",
@@ -50,10 +53,9 @@ const MOCK_FINDINGS = [
     currentVersion: null,
     fixedVersion: null,
     fixStatus: "fixed",
-    skipReason: null,
-    whatWasDone: "Applied parameterized query",
     impactLevel: null,
-    analystTestNote: "Verify src/db/query.ts still behaves correctly after the fix (SQL Injection).",
+    test: "Verify src/db/query.ts still behaves correctly after the fix (SQL Injection).",
+    notes: "Applied parameterized query",
   },
   {
     severity: "MEDIUM",
@@ -63,16 +65,10 @@ const MOCK_FINDINGS = [
     currentVersion: "1.2.5",
     fixedVersion: "1.2.8",
     fixStatus: "skipped",
-    skipReason: "MINOR upgrade skipped per sca_test_policy",
-    whatWasDone: null,
     impactLevel: "MINOR" as const,
-    analystTestNote: "No need — minor/mid upgrade, no manual test required.",
+    test: "No need — minor/mid upgrade, no manual test required.",
+    notes: "MINOR upgrade skipped per sca_test_policy",
   },
-];
-
-const MOCK_FIXES = [
-  { findingRule: "CVE-2024-1234", applied: true, result: "Upgraded lodash to 4.17.21" },
-  { findingRule: "SQL Injection", applied: true, result: "Parameterized query applied" },
 ];
 
 const MOCK_NEEDS_HUMAN = [
@@ -81,28 +77,28 @@ const MOCK_NEEDS_HUMAN = [
 
 describe("generateReport", () => {
   it("produces a valid pdf buffer", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
     expect(buffer).toBeInstanceOf(Buffer);
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.toString("utf-8", 0, 5)).toBe("%PDF-");
   });
 
   it("contains the repo name in the document", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
     const text = await extractText(buffer);
     expect(text).toContain("ms-test-repo");
   });
 
   it("contains findings status information", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
     const text = await extractText(buffer);
     expect(text).toContain("CRITICAL");
     expect(text).toContain("HIGH");
     expect(text).toContain("MEDIUM");
   });
 
-  it("contains per-finding what-was-done, skip reason, and analyst test notes", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+  it("contains per-finding test and notes columns in the single findings table", async () => {
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
     const text = await extractText(buffer);
     expect(text).toContain("Upgraded lodash from 4.17.20 to 4.17.21");
     expect(text).toContain("MINOR upgrade skipped per sca_test_policy");
@@ -110,8 +106,15 @@ describe("generateReport", () => {
     expect(text).toContain("Verify src/db/query.ts still behaves correctly after the fix (SQL Injection).");
   });
 
+  it("does not render the old separate Details or Fixes Applied sections", async () => {
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
+    const text = await extractText(buffer);
+    expect(text).not.toContain("Findings — Details");
+    expect(text).not.toContain("Fixes Applied");
+  });
+
   it("contains the scan summary section", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
     const text = await extractText(buffer);
     expect(text).toContain("Total findings");
     expect(text).toContain("Actionable");
@@ -119,35 +122,28 @@ describe("generateReport", () => {
   });
 
   it("contains no secret-like strings", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
     const text = await extractText(buffer);
     expect(text).not.toContain("api-key");
     expect(text).not.toContain("token");
     expect(text).not.toContain("secret");
   });
 
-  it("includes fixes applied section", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
-    const text = await extractText(buffer);
-    expect(text).toContain("Upgraded lodash");
-    expect(text).toContain("Parameterized query applied");
-  });
-
   it("includes needs-human section with evidence when present", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES, needsHuman: MOCK_NEEDS_HUMAN });
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, needsHuman: MOCK_NEEDS_HUMAN });
     const text = await extractText(buffer);
     expect(text).toContain("Needs Human Review");
     expect(text).toContain("No maintained replacement found");
   });
 
   it("shows a none-found message when needs-human is empty or omitted", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
     const text = await extractText(buffer);
     expect(text).toContain("None — no findings required human follow-up.");
   });
 
   it("falls back to a text letterhead when no logos are provided", async () => {
-    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+    const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
     const text = await extractText(buffer);
     expect(text).toContain("32bit");
   });
@@ -165,7 +161,6 @@ describe("generateReport", () => {
       const buffer = await generateReport({
         scan: MOCK_SCAN,
         findings: MOCK_FINDINGS,
-        fixes: MOCK_FIXES,
         operatorLogo: loaded,
         customerLogo: loaded,
       });
@@ -186,7 +181,7 @@ describe("saveReport", () => {
   it("writes a .pdf file to disk and returns the path", async () => {
     const tmpDir = await mkdtemp(join(tmpdir(), "cm-report-test-"));
     try {
-      const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+      const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
       const filePath = await saveReport(buffer, tmpDir, "ms-test-repo");
 
       expect(filePath).toContain("ms-test-repo-cm-");
@@ -204,7 +199,7 @@ describe("saveReport", () => {
     const tmpDir = await mkdtemp(join(tmpdir(), "cm-report-test-"));
     const nestedDir = join(tmpDir, "does", "not", "exist", "yet");
     try {
-      const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS, fixes: MOCK_FIXES });
+      const buffer = await generateReport({ scan: MOCK_SCAN, findings: MOCK_FINDINGS });
       const filePath = await saveReport(buffer, nestedDir, "ms-test-repo");
 
       const content = await readFile(filePath);

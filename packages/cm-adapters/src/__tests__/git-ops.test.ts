@@ -168,6 +168,16 @@ describe("GitOps", () => {
     }
   });
 
+  it("cloneToTemp pins core.autocrlf=false on every clone regardless of the host's global config (real production bug: two independently-checked-out clones on a machine with global core.autocrlf=true produced subtly different line endings, and a patch diffed from one failed to apply onto the other with 'does not match index' — silently dropping SAST's fixes since the merge step treated that as an unresolvable conflict)", async () => {
+    const clonedDir = await gitOps.cloneToTemp(bareDir);
+    try {
+      const { stdout } = await execa("git", ["config", "core.autocrlf"], { cwd: clonedDir });
+      expect(stdout.trim()).toBe("false");
+    } finally {
+      await gitOps.cleanup(clonedDir);
+    }
+  });
+
   it("applyPatch is a no-op returning true for an empty patch", async () => {
     const clonedDir = await gitOps.cloneToTemp(bareDir);
     try {

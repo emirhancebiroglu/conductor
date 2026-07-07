@@ -22,10 +22,27 @@ export class GitOps {
   async cloneToTemp(repoUrl: string, branch?: string): Promise<string> {
     await mkdir(this.tempRoot, { recursive: true });
     const dir = await mkdtemp(join(this.tempRoot, TEMP_PREFIX));
+    // why: core.autocrlf=false at clone time (not just at diff/apply time) —
+    // the CRLF<->LF conversion happens on checkout, so setting it only for
+    // later diff/apply calls is too late once the working tree already has
+    // whatever line endings the global config produced. Every clone this
+    // class ever makes gets a consistent, config-independent checkout, so
+    // diffPatch/applyPatch (which move a patch between two separately cloned
+    // worktrees) never disagree over line endings regardless of the host's
+    // global git config (confirmed as a real production cause: SAST's own
+    // "fixed" verdict on application.properties files never survived
+    // applyPatch onto the SCA clone, both were plain independent clones on a
+    // machine with core.autocrlf=true).
     const args = branch
-      ? ["clone", "--branch", branch, "--single-branch", repoUrl, dir]
-      : ["clone", repoUrl, dir];
+      ? ["-c", "core.autocrlf=false", "clone", "--branch", branch, "--single-branch", repoUrl, dir]
+      : ["-c", "core.autocrlf=false", "clone", repoUrl, dir];
     await execa("git", args, { timeout: 120_000 });
+    // why: `-c` only scopes the clone invocation itself — every subsequent
+    // command against this clone (commitAll, diffPatch, applyPatch, push) is
+    // a separate process that would otherwise fall back to the host's global
+    // config. Writing it into this clone's own .git/config makes the setting
+    // stick for the clone's whole lifetime, not just the one command.
+    await execa("git", ["config", "core.autocrlf", "false"], { cwd: dir });
     return dir;
   }
 
@@ -63,6 +80,8 @@ export class GitOps {
     // why: execa strips the trailing newline from stdout by default, which
     // corrupts a patch whose last line is a context/added line — git apply
     // requires the final line to end with \n (or an explicit no-newline marker).
+    // (core.autocrlf is forced false per-clone in cloneToTemp — see its
+    // comment for why that matters specifically for diffPatch/applyPatch.)
     const { stdout } = await execa("git", ["diff", "--binary"], { cwd: dir });
     return stdout ? `${stdout}\n` : stdout;
   }
@@ -73,7 +92,15 @@ export class GitOps {
     try {
       await execa("git", ["apply", "--3way"], { cwd: dir, input: patch });
       return true;
-    } catch {
+    } catch (err) {
+      // why: this failure was previously swallowed entirely — a real
+      // production run had SAST fixes silently dropped (never applied to the
+      // primary worktree, never committed/pushed) with zero diagnostic
+      // information beyond a generic "merge conflict" log at the call site.
+      // Surface the actual git apply stderr/exit code so the real cause
+      // (line-ending mismatch, unexpected context, etc.) is visible next time.
+      const execaErr = err as { stderr?: string; exitCode?: number; message?: string };
+      console.warn(`[git-ops] applyPatch failed in ${dir} (exit ${execaErr.exitCode ?? "?"}): ${(execaErr.stderr ?? execaErr.message ?? String(err)).slice(0, 1000)}`);
       return false;
     }
   }

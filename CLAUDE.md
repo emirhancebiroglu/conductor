@@ -5,17 +5,19 @@ Bu dosya, bu repoda çalışan tüm AI agent'larının (Claude Code, OpenCode) o
 ---
 
 ## Proje nedir
-Conductor: bir kontrol dashboard'u + agent worker. Kullanıcı bir GitHub projesi seçip kısa bir feature açıklaması girer; agent ekibi planlar, kodlar, test eder ve **insan onayı için bir PR açar**. Main'e merge'ü her zaman insan yapar.
+Conductor iki ayrı pipeline barındırır:
+1. **Feature pipeline**: kullanıcı bir GitHub projesi seçip kısa bir feature açıklaması girer; agent ekibi planlar, kodlar, test eder ve **insan onayı için bir PR açar**. Main'e merge'ü her zaman insan yapar.
+2. **CM pipeline** (`apps/cm-worker`): Checkmarx taramasından çıkan CRITICAL/HIGH bulguları otomatik fikslemeye çalışır. **PR açmaz** — bot-owned `checkmarx-auto` branch'ine commit+push yapıp rescan ile doğrular, `verified` (temiz) veya `needs_human` (insan incelemesi gerekli) durumunda durur. PR/merge, branch'i inceleyen insanın işidir, pipeline'ın değil.
 
 ## Mutlak kurallar (ihlal etme)
-- **MAIN'E ASLA OTOMATİK MERGE ETME.** Sadece feature branch'e commit/push ve PR aç. Merge insan kapısıdır.
+- **MAIN'E ASLA OTOMATİK MERGE ETME.** Feature pipeline sadece feature branch'e commit/push ve PR açar. CM pipeline sadece `checkmarx-auto`'ya commit/push yapar, PR bile açmaz. Merge insan kapısıdır.
 - **`--dangerously-skip-permissions` veya benzeri "her şeyi onayla" bayraklarını prod repolarda kullanma.**
 - **Sırları (secrets) asla commit'leme, loglama veya çıktıya yazma.** `.env`, token, API key → daima git-ignore.
 - **Migration / şema değişikliği / `DROP` / `DELETE` içeren DB işlemleri** her zaman ayrı işaretlenir ve insan onayı ister.
 - **Üretime (prod) deploy etme.** Conductor PR'a kadar gider; deploy ayrı, insan tetikli.
 - Bir görevin kapsamı belirsizse **dur ve netleştir**, varsayımla devam etme.
 
-## İş akışı (feature pipeline)
+## İş akışı — feature pipeline
 1. **product-owner** skill'i: kısa açıklamayı al, web araştırması ile detaylı spec + kabul kriterleri üret.
 2. **architect** skill'i: teknik analiz, plan, görev kırılımı, `feature/<slug>` branch'i aç.
 3. **frontend** + **backend** skill'leri: koordineli implementasyon (paylaşılan API kontratı üzerinden).
@@ -23,6 +25,15 @@ Conductor: bir kontrol dashboard'u + agent worker. Kullanıcı bir GitHub projes
 5. **tester** skill'i: unit + edge case + logging/exception → uygulamayı ayağa kaldır → Playwright E2E → **pass olana kadar döngü** → anlamlı commit mesajıyla commit → push → **PR aç ve dur**.
 
 Detaylı roller: `docs/05_AGENT_TEAM.md`. Skill'ler: `skills/<rol>/SKILL.md`.
+
+## İş akışı — CM pipeline (`apps/cm-worker`)
+1. **scan**: Checkmarx taraması (CLI, ScaResolver ile — Maven/Gradle transitive bağımlılık kapsaması için gerekli), sonuçlar CRITICAL/HIGH'a filtrelenip `cm_finding`'e yazılır.
+2. **plan**: `cm-fix-planner` her bulgu için strateji seçer (upgrade/mitigate/code-fix/skip/needs-human) — gerçek bir fix yolu varsa asla `needs-human`'a düşmemeli.
+3. **fix**: `cm-sca-agent`/`cm-sast-agent` bulguları düzeltir, `checkmarx-auto` branch'ine commit+push yapar (force-push — bot-owned branch, retry'lar arası state korunur).
+4. **verify + rescan**: build/test deterministik çalıştırılır (LLM'e güvenilmez); `checkmarx-auto`'nun taze rescan'i alınır (CLI submit + REST `/api/results` okuma), sonuç `cm_finding`'e fingerprint bazlı senkronize edilir (hâlâ CRITICAL/HIGH olanlar `open`, artık raporlanmayanlar `fixed`).
+5. **CRITICAL/HIGH sayısı sıfır değilse** → retry (`plan`'a geri döner, `max_fix_attempts`'e kadar). Sıfırsa → **`verified`** (terminal, PR açılmaz) ve rapor üretilir. Retry'lar tükenirse → **`needs_human`**.
+
+`verified`/`needs_human`/`done`/`failed`/`scan_failed` = terminal durumlar (bkz. `packages/cm-core/src/scan-states.ts`). PR açma adımı **yok** — `checkmarx-auto` branch'ini incelemek ve PR açmak insan işidir.
 
 ## Komutlar (bu repo)
 > Bunları gerçek repoya göre güncelle. Placeholder.

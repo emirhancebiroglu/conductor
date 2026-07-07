@@ -14,6 +14,7 @@ export class StubRunner implements AgentRunner {
     return Promise.resolve({
       summary: `StubRunner: ${agentConfig.agentName} handled "${task.description.slice(0, 80)}"`,
       changed: false,
+      success: true,
       usage: {
         inputTokens: 100,
         outputTokens: 50,

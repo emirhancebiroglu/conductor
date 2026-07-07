@@ -141,13 +141,16 @@ export async function processSastFindings(opts: SastFindingsOptions): Promise<Sa
 
     const jsonMatch = /\{[\s\S]*\}/m.exec(result.summary);
     const parsed = jsonMatch ? CmBatchFixResultSchema.safeParse(JSON.parse(jsonMatch[0])) : null;
+    // why: see sca.ts's identical fallback for the full rationale — a killed
+    // or failed agent process must never be treated as "fixed" just because
+    // it left partial file changes behind.
     const fallback: { fixStatus: "fixed" | "failed"; notes: string } = {
-      fixStatus: result.changed ? "fixed" : "failed",
+      fixStatus: result.success && result.changed ? "fixed" : "failed",
       notes: result.summary,
     };
 
     if (!parsed?.success) {
-      console.warn(`[sast] batch fix result JSON missing/invalid for scan ${scanId}, falling back to overall changed status`);
+      console.warn(`[sast] batch fix result JSON missing/invalid for scan ${scanId}, falling back to overall changed status (agent success=${result.success})`);
     }
 
     const byFingerprint = parsed?.success

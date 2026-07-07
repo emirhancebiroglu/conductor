@@ -178,7 +178,13 @@ async function runCategoryFixes(opts: CategoryFixOptions): Promise<void> {
     const applied = await ops.applyPatch(primaryDir, patch);
 
     if (!applied) {
-      console.warn(`[fix] scan ${scanId}: merge conflict applying SAST changes onto SCA clone, deferring SAST fixes to next attempt`);
+      // why: also surface which files the failed patch touched — applyPatch
+      // logs git's own stderr, but knowing the file list here (without
+      // reading the full patch body) is the fastest way to tell "same file
+      // both agents touched" apart from "patch format issue on files SCA
+      // never touched at all" without re-running anything.
+      const patchedFiles = [...patch.matchAll(/^diff --git a\/(\S+) b\/\S+/gm)].map((m) => m[1]);
+      console.warn(`[fix] scan ${scanId}: merge conflict applying SAST changes onto SCA clone (files in patch: ${patchedFiles.join(", ") || "none"}), deferring SAST fixes to next attempt`);
       for (const r of sastResults) {
         if (r.fixStatus === "fixed") {
           await supabase
@@ -193,12 +199,38 @@ async function runCategoryFixes(opts: CategoryFixOptions): Promise<void> {
   }
 }
 
+type RescanSyncResult = {
+  clean: boolean;
+  criticalHighCount: number;
+  externalScanId: string;
+};
+
+/**
+ * Runs the fix-branch validation rescan and syncs cm_finding to match its
+ * result — the actual source of truth for "is this branch clean" is this
+ * rescan, not whatever fix_status happens to be sitting in cm_finding from
+ * a prior pass (a real production bug: findings mismarked "skipped"/"fixed"
+ * left the DB believing a branch was clean when Checkmarx still reported real
+ * CRITICAL/HIGH findings).
+ *
+ * Sync rules, by fingerprint:
+ * - Every CRITICAL/HIGH finding the rescan reports is upserted as fix_status
+ *   "open" (Checkmarx still sees it as live, full stop — it doesn't matter
+ *   what an agent previously claimed about it) if it's not already "fixed"
+ *   from an already-recorded verdict for THIS attempt; a brand-new fingerprint
+ *   Checkmarx surfaced that wasn't in cm_finding before is inserted fresh.
+ * - Any fingerprint previously CRITICAL/HIGH and still open/failed in
+ *   cm_finding but ABSENT from this rescan's results is closed out as
+ *   "fixed" — Checkmarx no longer reports it, so it's genuinely resolved.
+ */
 async function rescanFixBranch(
   supabase: SupabaseClient,
   scanProvider: ScanProvider,
   repo: { owner: string; name: string },
   fixBranch: string,
-): Promise<{ clean: boolean }> {
+  scanId: string,
+  workspaceId: string,
+): Promise<RescanSyncResult> {
   // why: rescanRest still submits via the CLI (preserves --sca-resolver, required
   // for accurate Maven/Gradle transitive dependency coverage — confirmed via a
   // live scan that REST-only git-submit silently drops most such findings) but
@@ -210,7 +242,50 @@ async function rescanFixBranch(
     : await scanProvider.scan({ owner: repo.owner, name: repo.name }, fixBranch);
   const findings = scanResult.findings ?? [];
   const criticalHigh = findings.filter((f) => f.severity === "CRITICAL" || f.severity === "HIGH");
-  return { clean: criticalHigh.length === 0 };
+
+  for (const finding of criticalHigh) {
+    await supabase.from("cm_finding").upsert(
+      {
+        scan_id: scanId,
+        workspace_id: workspaceId,
+        source: finding.source,
+        severity: finding.severity,
+        rule: finding.rule,
+        package: finding.package,
+        current_version: finding.currentVersion,
+        fixed_version: finding.fixedVersion,
+        upgrade_impact: finding.upgradeImpact,
+        file: finding.file,
+        line: finding.line,
+        fingerprint: finding.fingerprint,
+        fix_status: "open",
+        description: finding.description,
+        taint_flow: finding.taintFlow,
+      },
+      { onConflict: "scan_id, fingerprint", ignoreDuplicates: false },
+    );
+  }
+
+  const stillPresent = new Set(criticalHigh.map((f) => f.fingerprint));
+  const staleResp = await supabase
+    .from("cm_finding")
+    .select("id, fingerprint")
+    .eq("scan_id", scanId)
+    .in("severity", ["CRITICAL", "HIGH"])
+    .in("fix_status", ["open", "failed"]) as unknown as { data: Array<{ id: string; fingerprint: string }> | null };
+
+  const staleIds = (staleResp.data ?? [])
+    .filter((row) => !stillPresent.has(row.fingerprint))
+    .map((row) => row.id);
+
+  if (staleIds.length > 0) {
+    await supabase
+      .from("cm_finding")
+      .update({ fix_status: "fixed", fix_notes: "Confirmed resolved by rescan — no longer reported by Checkmarx" })
+      .in("id", staleIds);
+  }
+
+  return { clean: criticalHigh.length === 0, criticalHighCount: criticalHigh.length, externalScanId: scanResult.externalScanId };
 }
 
 async function reloadOpenFindings(supabase: SupabaseClient, scanId: string): Promise<CmFinding[]> {
@@ -295,7 +370,7 @@ export function buildFixGraph(deps: FixGraphDeps): CompiledStateGraph<FixGraphSt
         // Commit+push immediately, before verification — this is the "commit
         // early" durability fix: once this lands, the edits are safe on the
         // remote fix branch regardless of what verify decides.
-        await ops.commitAll(primaryDir, `chore(security): apply Checkmarx fix(es) [cm-auto attempt ${state.attempt}]`);
+        await ops.commitAll(primaryDir, `CM || apply Checkmarx fix(es) (attempt ${state.attempt})`);
         // why: force — this branch is exclusively bot-owned and re-cloned
         // fresh from cloneBranch every attempt, so any pre-existing remote
         // commit on it (a prior run's fix, or a retried earlier attempt)
@@ -350,28 +425,70 @@ export function buildFixGraph(deps: FixGraphDeps): CompiledStateGraph<FixGraphSt
       }
 
       await setStep(supabase, state.scanId, `Fix attempt ${state.attempt}/${state.maxFixAttempts}: rescanning...`);
-      const { clean } = await rescanFixBranch(supabase, scanProvider, state.repo, state.fixBranch);
+      // why: rescanFixBranch syncs cm_finding to the rescan's actual result
+      // (upserts every CRITICAL/HIGH it still finds as "open", closes out
+      // fingerprints no longer reported as "fixed") — cm_finding's open/failed
+      // set is therefore a reliable reflection of what Checkmarx just reported,
+      // not stale state from a prior (possibly buggy) pass.
+      const { clean, criticalHighCount, externalScanId } = await rescanFixBranch(
+        supabase, scanProvider, state.repo, state.fixBranch, state.scanId, state.workspaceId,
+      );
+
+      // why: findings_actionable is set once at scan.ts (the original
+      // CRITICAL/HIGH count from the first scan) and both the report and
+      // dashboard read it as "how many actionable findings this scan had" —
+      // overwriting it here with the rescan's remaining count corrupted that
+      // meaning (a clean rescan would zero it out, making a fully-remediated
+      // scan's report say "Actionable: 0" instead of the real original count).
+      // Only external_scan_id (which rescan this was) belongs here.
+      await supabase
+        .from("cm_scan")
+        .update({ external_scan_id: externalScanId })
+        .eq("id", state.scanId);
 
       if (clean) {
         return { findings: [] };
       }
 
-      console.log(`[fix-graph] scan ${state.scanId}: CRITICAL/HIGH remain after attempt ${state.attempt}`);
+      console.log(`[fix-graph] scan ${state.scanId}: ${criticalHighCount} CRITICAL/HIGH remain after attempt ${state.attempt} (rescan ${externalScanId})`);
       const remaining = await reloadOpenFindings(supabase, state.scanId);
+
+      // why: defense-in-depth only — rescanFixBranch's sync above should make
+      // this impossible, but if cm_finding and the rescan ever disagree again,
+      // never silently fall through to "report" (which would mark the scan
+      // "verified" with real unresolved vulnerabilities still present).
+      if (remaining.length === 0) {
+        throw new Error(`scan ${state.scanId}: rescan reports ${criticalHighCount} CRITICAL/HIGH remaining but cm_finding sync produced zero open/failed rows — refusing to report verified`);
+      }
+
       return { findings: remaining, attempt: state.attempt + 1 };
     }, { retryPolicy: transientRetry })
 
     .addNode("report", async (state: FixGraphState) => {
       await supabase
         .from("cm_scan")
-        .update({ status: "verified", current_step: "All findings resolved, verified by rescan" })
+        .update({ status: "reporting", current_step: "All findings resolved, generating report..." })
         .eq("id", state.scanId);
 
       console.log(`[fix-graph] scan ${state.scanId}: generating report...`);
       try {
-        await generatePipelineReport(supabase, state.scanId, state.reportDir);
+        // why: a report is a required deliverable, not optional — a scan that
+        // never got its PDF must never read as "verified". Pass the intended
+        // final status explicitly (see report.ts) rather than letting
+        // generatePipelineReport re-read cm_scan.status mid-transition, which
+        // would show "reporting" in the PDF's own Final Status line.
+        await generatePipelineReport(supabase, state.scanId, state.reportDir, "verified");
+        await supabase
+          .from("cm_scan")
+          .update({ status: "verified", current_step: "All findings resolved, verified by rescan" })
+          .eq("id", state.scanId);
       } catch (err) {
-        console.error(`[fix-graph] scan ${state.scanId}: report generation failed: ${err instanceof Error ? err.message : String(err)}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[fix-graph] scan ${state.scanId}: report generation failed: ${msg}`);
+        await supabase
+          .from("cm_scan")
+          .update({ status: "failed", current_step: `Report generation failed: ${msg.slice(0, 300)}` })
+          .eq("id", state.scanId);
       }
       return {};
     })
