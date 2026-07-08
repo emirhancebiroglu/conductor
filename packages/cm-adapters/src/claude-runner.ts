@@ -49,6 +49,26 @@ function resolveOpencodeModel(model: string): string {
   return OPENCODE_MODEL_MAP[model] ?? model;
 }
 
+// why: --effort was previously hardcoded to "medium" for every agent regardless
+// of task shape. Anthropic's own published benchmark shows medium effort matches
+// high's SWE-bench score at ~76% fewer output tokens, and Anthropic's docs frame
+// effort as a task-type selector (low=deterministic/execution, medium=general
+// coding, high=complex multi-file reasoning) — the CM pipeline's 4 agents have
+// fixed, distinct task shapes (triage vs. scoped single-fix vs. deterministic
+// build-gate), so a static per-agent mapping matches that guidance without
+// needing per-invocation tuning.
+const CLAUDE_EFFORT_BY_AGENT: Record<string, "low" | "medium" | "high" | "max"> = {
+  "cm-fix-planner": "high", // triage over all findings — complex multi-file reasoning
+  "cm-sca-agent": "medium", // scoped single-fix execution
+  "cm-sast-agent": "medium", // scoped single-fix execution
+  "cm-fix-verifier": "low", // deterministic build/test gate
+};
+const DEFAULT_CLAUDE_EFFORT = "medium";
+
+export function resolveClaudeEffort(agentName: string): string {
+  return CLAUDE_EFFORT_BY_AGENT[agentName] ?? DEFAULT_CLAUDE_EFFORT;
+}
+
 function buildAllowedTools(tokens: string[]): string[] {
   const tools: string[] = [];
   for (const token of tokens) {
@@ -123,7 +143,7 @@ function spawnAgent(opts: SpawnAgentOptions): Promise<{ output: string; success:
       "--dangerously-skip-permissions",
       "--print",
       "--model", model,
-      "--effort", "medium",
+      "--effort", resolveClaudeEffort(agentName),
     ];
     if (hasTools) {
       args.push("--allowedTools", expandedTools.join(","));
