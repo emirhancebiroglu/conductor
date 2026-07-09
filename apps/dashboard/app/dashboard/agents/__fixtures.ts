@@ -1,4 +1,4 @@
-import type { AgentConfig, AgentCategory, ProviderModel, RunningJob } from "@conductor/core";
+﻿import type { AgentConfig, AgentCategory, ProviderModel, RunningJob } from "@conductor/core";
 
 const NOW = new Date().toISOString();
 
@@ -33,6 +33,7 @@ export const FIXTURE_AGENTS: AgentConfig[] = [
     order: 1,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "550e8400-e29b-41d4-a716-446655440002",
@@ -49,6 +50,7 @@ export const FIXTURE_AGENTS: AgentConfig[] = [
     order: 2,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "550e8400-e29b-41d4-a716-446655440003",
@@ -65,6 +67,7 @@ export const FIXTURE_AGENTS: AgentConfig[] = [
     order: 3,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "550e8400-e29b-41d4-a716-446655440004",
@@ -81,6 +84,7 @@ export const FIXTURE_AGENTS: AgentConfig[] = [
     order: 4,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "550e8400-e29b-41d4-a716-446655440005",
@@ -97,6 +101,7 @@ export const FIXTURE_AGENTS: AgentConfig[] = [
     order: 5,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "550e8400-e29b-41d4-a716-446655440006",
@@ -113,6 +118,7 @@ export const FIXTURE_AGENTS: AgentConfig[] = [
     order: 6,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "550e8400-e29b-41d4-a716-446655440007",
@@ -129,6 +135,7 @@ export const FIXTURE_AGENTS: AgentConfig[] = [
     order: 7,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "550e8400-e29b-41d4-a716-446655440008",
@@ -145,6 +152,7 @@ export const FIXTURE_AGENTS: AgentConfig[] = [
     order: 8,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
 ];
 
@@ -231,3 +239,4 @@ export const FIXTURE_RUNNING_JOBS_WITH_RUNNING: RunningJob[] = [
     stepMessage: "Implementing frontend changes",
   },
 ];
+

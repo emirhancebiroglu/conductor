@@ -7,15 +7,18 @@
   "types": "./src/index.ts",
   "scripts": {
     "lint": "eslint src --max-warnings 0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "@octokit/rest": "^21.0.0",
-    "@conductor/core": "workspace:*"
+    "@conductor/core": "workspace:*",
+    "@octokit/rest": "^21.0.0"
   },
   "devDependencies": {
     "@conductor/tsconfig": "workspace:*",
     "@types/node": "^22.10.5",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
   }
 }

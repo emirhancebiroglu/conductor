@@ -1,0 +1,10 @@
+{
+  "extends": "@conductor/tsconfig/node.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "moduleResolution": "bundler"
+  },
+  "include": ["src"]
+}

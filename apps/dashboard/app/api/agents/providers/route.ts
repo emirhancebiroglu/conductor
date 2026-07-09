@@ -95,9 +95,9 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({ providers, rawModels: mappedModels });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error.message || "Internal Server Error" },
+      { error: error instanceof Error ? error.message : "Internal Server Error" },
       { status: 500 }
     );
   }
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
 
     // why: Supabase client typing resolves table rows to never in this setup, so we cast the builder to any to allow updating and cast the result to the known DB row types
     const { data: inserted, error: insertError } = (await (supabase
-      .from("provider_models") as any)
+      .from("provider_models") as unknown as { insert: (p: unknown) => { select: () => { single: () => Promise<unknown> } } })
       .insert(payload)
       .select()
       .single()) as unknown as { data: ProviderModelRow | null; error: { message: string } | null };
@@ -187,9 +187,9 @@ export async function POST(request: NextRequest) {
 
     const validated = ProviderModelSchema.parse(mapped);
     return NextResponse.json({ model: validated }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error.message || "Internal Server Error" },
+      { error: error instanceof Error ? error.message : "Internal Server Error" },
       { status: 500 }
     );
   }

@@ -1,0 +1,41 @@
+{
+  "results": [
+    {
+      "type": "sast",
+      "severity": "HIGH",
+      "description": "SQL Injection via string concatenation",
+      "data": {
+        "queryName": "SQL Injection",
+        "languageName": "TypeScript",
+        "nodes": [
+          { "fileName": "src/users.ts", "line": 42, "column": 10, "name": "userId" },
+          { "fileName": "src/users.ts", "line": 43, "column": 5, "name": "query" }
+        ]
+      }
+    },
+    {
+      "type": "sast",
+      "severity": "CRITICAL",
+      "description": "Stored XSS via dangerouslySetInnerHTML",
+      "data": {
+        "queryName": "Stored XSS",
+        "languageName": "TypeScript",
+        "nodes": [
+          { "fileName": "src/components/Profile.tsx", "line": 128, "column": 5, "name": "user.bio" }
+        ]
+      }
+    },
+    {
+      "type": "sast",
+      "severity": "MEDIUM",
+      "description": "Insecure randomness via Math.random()",
+      "data": {
+        "queryName": "Insecure Randomness",
+        "languageName": "TypeScript",
+        "nodes": [
+          { "fileName": "src/auth/token.ts", "line": 15, "column": 15, "name": "token" }
+        ]
+      }
+    }
+  ]
+}

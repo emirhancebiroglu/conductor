@@ -85,6 +85,16 @@ const NAV = [
     ),
   },
   {
+    label: "Checkmarx",
+    href: "/dashboard/cm",
+    icon: (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M2 2h10v10H2z" stroke="currentColor" strokeWidth="1.2" />
+        <path d="M5 7l2 2 2.5-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="square" />
+      </svg>
+    ),
+  },
+  {
     label: "Agents",
     href: "/dashboard/agents",
     icon: (

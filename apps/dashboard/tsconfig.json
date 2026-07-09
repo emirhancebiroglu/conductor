@@ -19,6 +19,8 @@
   "exclude": [
     "node_modules",
     "tests/**/*.test.ts",
-    "tests/**/*.test.tsx"
+    "tests/**/*.test.tsx",
+    "e2e/**/*.ts",
+    "e2e/**/*.tsx"
   ]
 }

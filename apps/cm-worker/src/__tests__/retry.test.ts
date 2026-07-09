@@ -1,0 +1,162 @@
+import { describe, it, expect, vi } from "vitest";
+import { createScanWorkHandler, setupScanQueue, QUEUE_SCAN, QUEUE_SCAN_DEAD_LETTER, DEFAULT_RETRY_LIMIT, DEFAULT_RETRY_DELAY_SECONDS } from "../handlers/retry.js";
+import { CheckmarxScanError } from "@conductor/cm-adapters";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ScanProvider } from "@conductor/cm-adapters";
+
+const validRow = {
+  id: "scan-001",
+  repo_id: "repo-1",
+  workspace_id: "ws-1",
+  status: "queued",
+  provider: "checkmarx",
+  external_scan_id: null,
+  branch_scanned: "main",
+  trigger: "manual",
+  findings_total: 0,
+  findings_actionable: 0,
+  error: null,
+  current_step: null,
+  pr_url: null,
+  report_path: null,
+  started_at: null,
+  finished_at: null,
+  created_at: "",
+  updated_at: "",
+};
+
+function mockSupabase(pipelineEnabled: boolean) {
+  return {
+    from: vi.fn((table: string) => {
+      if (table === "cm_pipeline") {
+        return {
+          select: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: { enabled: pipelineEnabled }, error: null }),
+        };
+      }
+      if (table === "cm_scan") {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: validRow, error: null }),
+          update: vi.fn().mockReturnThis(),
+        };
+      }
+      if (table === "cm_repo") {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: { owner: "test", name: "repo", default_branch: "main" }, error: null }),
+        };
+      }
+      if (table === "cm_finding") {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      return {};
+    }),
+  } as unknown as SupabaseClient;
+}
+
+describe("createScanWorkHandler", () => {
+  it("retries on system_fail errors", async () => {
+    const failingProvider: ScanProvider = {
+      scan: vi.fn().mockRejectedValue(
+        new CheckmarxScanError("Connection refused", "system_fail"),
+      ),
+      fetchResults: vi.fn(),
+    };
+
+    const boss = { send: vi.fn().mockResolvedValue(undefined) };
+    const supabase = mockSupabase(true);
+    const handler = createScanWorkHandler(supabase, failingProvider, boss as never);
+
+    await expect(handler([{ data: { scanId: "scan-001" } }])).rejects.toThrow("Connection refused");
+  });
+
+  it("does NOT retry on scan_failed errors", async () => {
+    const failingProvider: ScanProvider = {
+      scan: vi.fn().mockRejectedValue(
+        new CheckmarxScanError("Scan aborted by Checkmarx", "scan_failed", 1),
+      ),
+      fetchResults: vi.fn(),
+    };
+
+    const boss = { send: vi.fn().mockResolvedValue(undefined) };
+    const supabase = mockSupabase(true);
+    const handler = createScanWorkHandler(supabase, failingProvider, boss as never);
+
+    await expect(handler([{ data: { scanId: "scan-001" } }])).resolves.toBeUndefined();
+  });
+
+  it("retries on scan load failures", async () => {
+    const scanProvider: ScanProvider = {
+      scan: vi.fn(),
+      fetchResults: vi.fn(),
+    };
+
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "cm_pipeline") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { enabled: true }, error: null }),
+          };
+        }
+        if (table === "cm_scan") {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: "connection error" } }),
+            update: vi.fn().mockReturnThis(),
+          };
+        }
+        return {};
+      }),
+    } as unknown as SupabaseClient;
+
+    const boss = { send: vi.fn().mockResolvedValue(undefined) };
+    const handler = createScanWorkHandler(supabase, scanProvider, boss as never);
+
+    await expect(handler([{ data: { scanId: "scan-001" } }])).rejects.toThrow("Failed to load cm_scan");
+  });
+
+  it("proceeds with manual scan even when pipeline is disabled (kill switch only blocks auto-mode)", async () => {
+    const scanMock = vi.fn().mockRejectedValue(new CheckmarxScanError("scan error", "system_fail"));
+    const provider: ScanProvider = {
+      scan: scanMock,
+      fetchResults: vi.fn(),
+    };
+
+    const boss = { send: vi.fn().mockResolvedValue(undefined) };
+    const supabase = mockSupabase(false);
+    const handler = createScanWorkHandler(supabase, provider, boss as never);
+
+    await expect(handler([{ data: { scanId: "scan-001" } }])).rejects.toThrow("scan error");
+    expect(scanMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("setupScanQueue", () => {
+  it("creates a queue with retry and dead letter config", async () => {
+    const mockCreateQueue = vi.fn().mockResolvedValue(undefined);
+    const boss = { createQueue: mockCreateQueue };
+
+    await setupScanQueue(boss as never, { retryLimit: 3, retryDelaySeconds: 1800 });
+
+    expect(mockCreateQueue).toHaveBeenCalledWith(QUEUE_SCAN, {
+      retryLimit: 3,
+      retryDelay: 1800,
+      retryBackoff: true,
+      deadLetter: QUEUE_SCAN_DEAD_LETTER,
+    });
+  });
+
+  it("uses default values", () => {
+    expect(DEFAULT_RETRY_LIMIT).toBe(3);
+    expect(DEFAULT_RETRY_DELAY_SECONDS).toBe(1800);
+  });
+});

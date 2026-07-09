@@ -1,4 +1,4 @@
-import type { AgentConfig, ProviderModel, RunningJob } from "@conductor/core";
+﻿import type { AgentConfig, ProviderModel, RunningJob } from "@conductor/core";
 
 const NOW = "2026-05-31T00:00:00Z";
 
@@ -19,6 +19,7 @@ export const ALL_AGENTS: AgentConfig[] = [
     order: 1,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "aaaaaaaa-0002-0000-0000-000000000002",
@@ -36,6 +37,7 @@ export const ALL_AGENTS: AgentConfig[] = [
     order: 2,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "aaaaaaaa-0003-0000-0000-000000000003",
@@ -53,6 +55,7 @@ export const ALL_AGENTS: AgentConfig[] = [
     order: 3,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "aaaaaaaa-0004-0000-0000-000000000004",
@@ -70,6 +73,7 @@ export const ALL_AGENTS: AgentConfig[] = [
     order: 4,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "aaaaaaaa-0005-0000-0000-000000000005",
@@ -87,6 +91,7 @@ export const ALL_AGENTS: AgentConfig[] = [
     order: 5,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "aaaaaaaa-0006-0000-0000-000000000006",
@@ -104,6 +109,7 @@ export const ALL_AGENTS: AgentConfig[] = [
     order: 6,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "aaaaaaaa-0007-0000-0000-000000000007",
@@ -121,6 +127,7 @@ export const ALL_AGENTS: AgentConfig[] = [
     order: 7,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
   {
     id: "aaaaaaaa-0008-0000-0000-000000000008",
@@ -138,6 +145,7 @@ export const ALL_AGENTS: AgentConfig[] = [
     order: 8,
     createdAt: NOW,
     updatedAt: NOW,
+    allowedTools: [],
   },
 ];
 
@@ -228,3 +236,4 @@ export const PROVIDERS: { name: string; displayName: string; models: ProviderMod
 ];
 
 export const SINGLE_AGENT: AgentConfig = ALL_AGENTS[0] as AgentConfig;
+

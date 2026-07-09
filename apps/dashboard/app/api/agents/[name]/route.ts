@@ -16,6 +16,7 @@ const UpdateAgentBodySchema = z.object({
   skillContent: z.string().nullable().optional(),
   categoryId: z.string().uuid().nullable().optional(),
   laneOverride: LaneSchema.nullable().optional(),
+  allowedTools: z.array(z.string()).optional(),
   order: z.number().int().optional(),
 });
 
@@ -87,6 +88,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     if (parsedBody.data.skillContent !== undefined) updatePayload.skill_content = parsedBody.data.skillContent;
     if (parsedBody.data.categoryId !== undefined) updatePayload.category_id = parsedBody.data.categoryId;
     if (parsedBody.data.laneOverride !== undefined) updatePayload.lane_override = parsedBody.data.laneOverride;
+    if (parsedBody.data.allowedTools !== undefined) updatePayload.allowed_tools = parsedBody.data.allowedTools;
     if (parsedBody.data.order !== undefined) updatePayload.order = parsedBody.data.order;
 
     const { data: updated, error: updateError } = (await (supabase.from("agent_config") as unknown as {

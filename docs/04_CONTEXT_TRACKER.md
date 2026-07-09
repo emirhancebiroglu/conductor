@@ -22,6 +22,8 @@
 | 2026-05-30 | Ucuz şerit OpenCode Go, premium Claude Code | Sabit maliyet + en iyi kodlama | Tek model her şeye |
 | 2026-05-30 | Main'e otomatik merge YOK | En kötü hata senaryosunu kapatır | Tam otonom merge |
 | 2026-06-03 | Workspace ayrımı: `workspaces` tablosu + `workspace_id` FK | Bağlam izolasyonu (work/personal); N-workspace genişler; per-workspace ayar (settings jsonb) | `scope enum` (2'ye kilitler), ayrı Supabase projesi (aşırı) |
+| 2026-06-03 | CM-Pipeline: ayrı worker (`apps/cm-worker`) + pg-boss kuyruk | Checkmarx scan/fix işlemleri uzun süreli, clone/LLM/shell gerektirir — serverless olamaz | Mevcut worker'ı genişletmek (çapraz kirlilik) |
+| 2026-06-03 | CM-Pipeline externals (Checkmarx, LLM) adapter + mock pattern | Tüm pipeline test edilebilir olmalı, gerçek Checkmarx tenant gerektirmez | Gerçek bağımlılıklarla test (kırılgan, yavaş) |
 
 ---
 
@@ -45,9 +47,11 @@
 ## 🗺️ Sistem haritası (hızlı hatırlatma)
 ```
 dashboard (Next/Vercel) ─Supabase─ worker (VM)
+                                    └─ cm-worker (ayrı süreç, pg-boss)
 workspaces(work|personal) → projects → jobs → runs
 worker: clone→branch→ PO→Arch→FE+BE→Reviewer⟲→Tester⟲ →commit→push→PR
-insan kapısı: merge, migration, belirsizlik, limit, dış paylaşım
+cm-worker: cm_pipeline → cm_repo → cm_scan → cm_finding → fix → PR → cm_report
+insan kapısı: merge, migration, belirsizlik, limit, dış paylaşım, CM pipeline
 ```
 
 ---
@@ -60,6 +64,7 @@ insan kapısı: merge, migration, belirsizlik, limit, dış paylaşım
 - **İnsan kapısı (human gate):** worker'ın durup senin onayını beklediği nokta.
 - **Döngü (⟲):** reviewer/tester'ın "tamam" diyene kadar tekrarlaması.
 - **Dogfood:** sistemi önce kendi projende kullanmak.
+- **CM-Pipeline:** Checkmarx auto-scan & auto-fix pipeline — ayrı worker (`apps/cm-worker`), pg-boss kuyruk, 5 aşama (scan→fix→rescan→PR→report). Detay: `plans/cm-pipeline-plan/`.
 
 ---
 

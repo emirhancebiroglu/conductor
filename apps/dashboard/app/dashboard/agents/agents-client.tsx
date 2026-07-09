@@ -64,8 +64,8 @@ export function AgentsClient({
         const jobIds = new Set<string>();
         for (const r of data) {
           if (!latest[r.agent]) {
-            latest[r.agent] = { id: r.id, jobId: r.job_id, jobTitle: r.job_id.split("-")[0] ?? "", status: r.status, createdAt: r.created_at };
-            jobIds.add(r.job_id);
+            latest[r.agent] = { id: r.id, jobId: r.job_id, jobTitle: r.job_id?.split("-")[0] ?? "", status: r.status, createdAt: r.created_at };
+            if (r.job_id) jobIds.add(r.job_id);
           }
         }
         if (jobIds.size > 0) {
@@ -102,6 +102,7 @@ export function AgentsClient({
               order: row.order,
               createdAt: row.created_at,
               updatedAt: row.updated_at,
+              allowedTools: row.allowed_tools ?? [],
             }
           : a
       ));
